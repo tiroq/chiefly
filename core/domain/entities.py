@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID
 
 from core.domain.enums import (
@@ -41,8 +41,8 @@ class TaskItem:
     confidence_band: ConfidenceBand | None = None
     llm_model: str | None = None
     is_processed: bool = False
-    created_at: datetime = field(default_factory=datetime.utcnow)
-    updated_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=lambda: datetime.now(tz=timezone.utc))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(tz=timezone.utc))
     confirmed_at: datetime | None = None
     completed_at: datetime | None = None
 
