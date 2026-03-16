@@ -1,0 +1,51 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "chiefly"
+version = "0.1.0"
+description = "AI Chief of Staff for task intake and execution"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.111.0",
+    "uvicorn[standard]>=0.29.0",
+    "sqlalchemy>=2.0.30",
+    "alembic>=1.13.1",
+    "asyncpg>=0.29.0",
+    "psycopg2-binary>=2.9.9",
+    "pydantic>=2.7.1",
+    "pydantic-settings>=2.2.1",
+    "aiogram>=3.7.0",
+    "google-api-python-client>=2.130.0",
+    "google-auth>=2.29.0",
+    "google-auth-httplib2>=0.2.0",
+    "openai>=1.30.1",
+    "apscheduler>=3.10.4",
+    "httpx>=0.27.0",
+    "python-dotenv>=1.0.1",
+    "structlog>=24.1.0",
+    "pytz>=2024.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2.0",
+    "pytest-asyncio>=0.23.6",
+    "pytest-mock>=3.14.0",
+    "anyio>=4.4.0",
+    "factory-boy>=3.3.0",
+    "freezegun>=1.5.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["apps", "core", "db"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
