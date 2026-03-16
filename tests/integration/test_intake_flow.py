@@ -105,7 +105,7 @@ async def test_intake_creates_task_item(seeded_session, google_task, classificat
     mock_google = MagicMock(spec=GoogleTasksService)
     mock_google.list_tasks.return_value = [google_task]
 
-    mock_llm = MagicMock(spec=LLMService)
+    mock_llm = AsyncMock(spec=LLMService)
     mock_llm.classify_task.return_value = classification_result
 
     mock_tg = AsyncMock(spec=TelegramService)
@@ -152,7 +152,7 @@ async def test_intake_is_idempotent(seeded_session, google_task, classification_
     mock_google = MagicMock(spec=GoogleTasksService)
     mock_google.list_tasks.return_value = [google_task]
 
-    mock_llm = MagicMock(spec=LLMService)
+    mock_llm = AsyncMock(spec=LLMService)
     mock_llm.classify_task.return_value = classification_result
 
     mock_tg = AsyncMock(spec=TelegramService)
@@ -201,7 +201,7 @@ async def test_intake_skips_empty_title(seeded_session):
     mock_google = MagicMock(spec=GoogleTasksService)
     mock_google.list_tasks.return_value = [empty_task]
 
-    mock_llm = MagicMock(spec=LLMService)
+    mock_llm = AsyncMock(spec=LLMService)
     mock_tg = AsyncMock(spec=TelegramService)
 
     with patch("apps.api.config.get_settings") as mock_settings:

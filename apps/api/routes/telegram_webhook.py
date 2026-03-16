@@ -5,6 +5,7 @@ Telegram webhook route for receiving updates from Telegram Bot API.
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import JSONResponse
 
 from apps.api.logging import get_logger
 
@@ -18,10 +19,17 @@ async def telegram_webhook(request: Request) -> dict:
     Receive Telegram webhook updates.
     The bot dispatcher handles these updates.
     """
+    dp = getattr(request.app.state, "dispatcher", None)
+    bot = getattr(request.app.state, "bot", None)
+    if dp is None or bot is None:
+        logger.warning("telegram_webhook_called_but_bot_not_configured")
+        return JSONResponse(
+            status_code=503,
+            content={"ok": False, "detail": "Bot not configured"},
+        )
+
     try:
         body = await request.json()
-        dp = request.app.state.dispatcher
-        bot = request.app.state.bot
         from aiogram.types import Update
 
         update = Update.model_validate(body)

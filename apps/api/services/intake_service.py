@@ -105,7 +105,9 @@ class IntakeService:
                 status=TaskStatus.NEW,
             )
             task_item = await task_repo.create(task_item)
-            await self._session.commit()
+            # Note: no early commit here — the full pipeline runs in one transaction.
+            # If anything fails, rollback will undo the task creation too, allowing
+            # re-processing on the next poll.
 
             logger.info(
                 "task_item_created",
@@ -115,7 +117,7 @@ class IntakeService:
 
             # Classify
             projects = await project_repo.list_active()
-            classification, project = self._classification.classify(raw_text, projects)
+            classification, project = await self._classification.classify(raw_text, projects)
 
             # Update task item with classification
             task_item.normalized_title = classification.normalized_title

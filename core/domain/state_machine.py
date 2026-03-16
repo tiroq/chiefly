@@ -2,13 +2,16 @@ from core.domain.enums import TaskStatus
 from core.domain.exceptions import InvalidStateTransitionError
 
 # Allowed transitions: {from_status: set_of_valid_to_statuses}
+# ANY -> ERROR is allowed for all states where an operational error can occur.
+# COMPLETED and DISCARDED are terminal for normal flow, but can still transition
+# to ERROR to record unexpected post-completion failures (e.g. Google Tasks sync).
 ALLOWED_TRANSITIONS: dict[TaskStatus, set[TaskStatus]] = {
     TaskStatus.NEW: {TaskStatus.PROPOSED, TaskStatus.ERROR},
     TaskStatus.PROPOSED: {TaskStatus.CONFIRMED, TaskStatus.DISCARDED, TaskStatus.ERROR},
     TaskStatus.CONFIRMED: {TaskStatus.ROUTED, TaskStatus.ERROR},
     TaskStatus.ROUTED: {TaskStatus.COMPLETED, TaskStatus.ERROR},
-    TaskStatus.COMPLETED: set(),
-    TaskStatus.DISCARDED: set(),
+    TaskStatus.COMPLETED: {TaskStatus.ERROR},
+    TaskStatus.DISCARDED: {TaskStatus.ERROR},
     TaskStatus.ERROR: set(),
 }
 

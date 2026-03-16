@@ -170,7 +170,7 @@ def _build_telegram_dispatcher():
                 await callback.answer("Task not found!", show_alert=True)
                 return
 
-            if task.status not in (TaskStatus.NEW, TaskStatus.PROPOSED):
+            if task.status != TaskStatus.PROPOSED:
                 await callback.answer("Task already processed.", show_alert=True)
                 return
 

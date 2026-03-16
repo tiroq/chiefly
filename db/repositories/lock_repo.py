@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
 from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models.processing_lock import ProcessingLock
@@ -32,7 +33,10 @@ class LockRepository:
         try:
             await self._session.flush()
             return True
-        except Exception:
+        except IntegrityError:
+            # Concurrent insert won the race; roll back the failed flush so the
+            # session remains usable and let the caller retry on the next poll.
+            await self._session.rollback()
             return False
 
     async def release(self, lock_key: str) -> None:

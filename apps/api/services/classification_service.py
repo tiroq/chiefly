@@ -22,7 +22,7 @@ class ClassificationService:
         self._llm = llm_service
         self._routing = routing_service
 
-    def classify(
+    async def classify(
         self,
         raw_text: str,
         available_projects: list[Project],
@@ -33,7 +33,7 @@ class ClassificationService:
         Returns (classification_result, routed_project).
         """
         project_names = [p.name for p in available_projects]
-        classification = self._llm.classify_task(raw_text, project_names)
+        classification = await self._llm.classify_task(raw_text, project_names)
 
         project, confidence = self._routing.route(
             raw_text=raw_text,

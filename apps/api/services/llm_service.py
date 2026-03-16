@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import json
 
+import anyio
+
 from apps.api.logging import get_logger
 from core.domain.enums import ConfidenceBand, TaskKind
 from core.domain.exceptions import LLMError
@@ -76,7 +78,8 @@ class LLMService:
 
         return OpenAI(api_key=self._api_key)
 
-    def _call_llm(self, prompt: str) -> str:
+    def _call_llm_sync(self, prompt: str) -> str:
+        """Synchronous OpenAI call — always run via anyio.to_thread.run_sync."""
         client = self._get_client()
         response = client.chat.completions.create(
             model=self._model,
@@ -86,9 +89,11 @@ class LLMService:
         )
         return response.choices[0].message.content or ""
 
-    def classify_task(
+    async def classify_task(
         self, raw_text: str, project_candidates: list[str]
     ) -> TaskClassificationResult:
+        """Classify raw task text using LLM.  Non-blocking — runs the sync
+        OpenAI call in a thread pool via anyio.to_thread.run_sync."""
         projects_str = ", ".join(project_candidates) if project_candidates else "Personal"
         prompt = _CLASSIFY_PROMPT_TEMPLATE.format(
             raw_text=raw_text,
@@ -97,7 +102,9 @@ class LLMService:
 
         for attempt in range(2):
             try:
-                raw_response = self._call_llm(prompt)
+                raw_response = await anyio.to_thread.run_sync(
+                    self._call_llm_sync, prompt
+                )
                 # Strip markdown code fences if present
                 raw_response = raw_response.strip()
                 if raw_response.startswith("```"):

@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Enum, Float, Index, String, Uuid, func
+from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, Index, String, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from core.domain.enums import ConfidenceBand, TaskKind, TaskStatus
@@ -25,7 +25,7 @@ class TaskItem(Base):
         Enum(TaskStatus, name="task_status_enum", create_constraint=False), nullable=False, default=TaskStatus.NEW
     )
     project_id: Mapped[uuid.UUID | None] = mapped_column(
-        Uuid, nullable=True
+        Uuid, ForeignKey("projects.id", ondelete="SET NULL"), nullable=True
     )
     next_action: Mapped[str | None] = mapped_column(String(500), nullable=True)
     due_hint: Mapped[str | None] = mapped_column(String(100), nullable=True)

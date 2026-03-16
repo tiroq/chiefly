@@ -5,6 +5,7 @@ Telegram service for sending messages and handling the bot.
 from __future__ import annotations
 
 import asyncio
+import html
 
 from apps.api.logging import get_logger
 from core.domain.exceptions import TelegramError
@@ -36,27 +37,34 @@ def _build_proposal_text(
     conf_emoji = CONFIDENCE_EMOJI.get(classification.confidence, "⚪")
     kind_label = KIND_LABELS.get(classification.kind, classification.kind)
 
+    # Escape all user/LLM-provided content before embedding in HTML
+    safe_raw = html.escape(raw_text)
+    safe_title = html.escape(classification.normalized_title)
+    safe_project = html.escape(project_name) if project_name else "?"
+    safe_next_action = html.escape(classification.next_action) if classification.next_action else None
+    safe_due_hint = html.escape(classification.due_hint) if classification.due_hint else None
+
     lines = [
         "🤖 <b>Chiefly detected a new inbox item</b>",
         "",
-        f"<b>Raw:</b> <i>{raw_text}</i>",
+        f"<b>Raw:</b> <i>{safe_raw}</i>",
         "",
         "📌 <b>Proposed:</b>",
         f"  Type: {kind_label}",
-        f"  Project: {project_name or '?'}",
-        f"  Title: {classification.normalized_title}",
+        f"  Project: {safe_project}",
+        f"  Title: {safe_title}",
     ]
-    if classification.next_action:
-        lines.append(f"  Next step: {classification.next_action}")
-    if classification.due_hint:
-        lines.append(f"  Due: {classification.due_hint}")
+    if safe_next_action:
+        lines.append(f"  Next step: {safe_next_action}")
+    if safe_due_hint:
+        lines.append(f"  Due: {safe_due_hint}")
     lines.append(f"  Confidence: {conf_emoji} {classification.confidence.capitalize()}")
 
     if classification.ambiguities:
         lines.append("")
         lines.append("⚠️ <b>Ambiguities:</b>")
         for a in classification.ambiguities:
-            lines.append(f"  • {a}")
+            lines.append(f"  • {html.escape(a)}")
 
     return "\n".join(lines)
 
@@ -89,7 +97,7 @@ class TelegramService:
         from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
         text = _build_proposal_text(raw_text, classification, project_name)
-        short_id = task_id.replace("-", "")[:16]
+        short_id = task_id.replace("-", "")
 
         buttons = [
             [
@@ -154,7 +162,7 @@ class TelegramService:
         """Send a project selection keyboard. projects = [(name, slug)]"""
         from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-        short_id = task_id.replace("-", "")[:16]
+        short_id = task_id.replace("-", "")
         buttons = []
         for name, slug in projects:
             buttons.append(
@@ -183,7 +191,7 @@ class TelegramService:
         """Send a task kind selection keyboard."""
         from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-        short_id = task_id.replace("-", "")[:16]
+        short_id = task_id.replace("-", "")
         buttons = []
         for kind in TaskKind:
             buttons.append(

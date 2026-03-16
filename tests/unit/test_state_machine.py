@@ -47,17 +47,25 @@ class TestStateMachineTransition:
         with pytest.raises(InvalidStateTransitionError):
             transition(TaskStatus.CONFIRMED, TaskStatus.PROPOSED)
 
-    def test_invalid_completed_to_anything(self):
-        for target in TaskStatus:
-            if target != TaskStatus.COMPLETED:
-                with pytest.raises(InvalidStateTransitionError):
-                    transition(TaskStatus.COMPLETED, target)
+    def test_completed_to_error_allowed(self):
+        result = transition(TaskStatus.COMPLETED, TaskStatus.ERROR)
+        assert result == TaskStatus.ERROR
 
-    def test_invalid_discarded_to_anything(self):
-        for target in TaskStatus:
-            if target != TaskStatus.DISCARDED:
-                with pytest.raises(InvalidStateTransitionError):
-                    transition(TaskStatus.DISCARDED, target)
+    def test_discarded_to_error_allowed(self):
+        result = transition(TaskStatus.DISCARDED, TaskStatus.ERROR)
+        assert result == TaskStatus.ERROR
+
+    def test_invalid_completed_to_non_error(self):
+        invalid_targets = [s for s in TaskStatus if s not in (TaskStatus.COMPLETED, TaskStatus.ERROR)]
+        for target in invalid_targets:
+            with pytest.raises(InvalidStateTransitionError):
+                transition(TaskStatus.COMPLETED, target)
+
+    def test_invalid_discarded_to_non_error(self):
+        invalid_targets = [s for s in TaskStatus if s not in (TaskStatus.DISCARDED, TaskStatus.ERROR)]
+        for target in invalid_targets:
+            with pytest.raises(InvalidStateTransitionError):
+                transition(TaskStatus.DISCARDED, target)
 
     def test_error_message_is_informative(self):
         with pytest.raises(InvalidStateTransitionError) as exc_info:
@@ -73,6 +81,10 @@ class TestCanTransition:
     def test_invalid_returns_false(self):
         assert can_transition(TaskStatus.NEW, TaskStatus.ROUTED) is False
 
-    def test_completed_returns_false_for_all(self):
+    def test_completed_to_error_is_true(self):
+        assert can_transition(TaskStatus.COMPLETED, TaskStatus.ERROR) is True
+
+    def test_completed_to_non_error_is_false(self):
         for target in TaskStatus:
-            assert can_transition(TaskStatus.COMPLETED, target) is False
+            if target != TaskStatus.ERROR:
+                assert can_transition(TaskStatus.COMPLETED, target) is False

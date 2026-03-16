@@ -59,11 +59,13 @@ def mock_telegram():
 
 @pytest.fixture
 def mock_llm():
+    from unittest.mock import AsyncMock
+
     from apps.api.services.llm_service import LLMService
     from core.domain.enums import ConfidenceBand, TaskKind
     from core.schemas.llm import TaskClassificationResult
 
-    svc = MagicMock(spec=LLMService)
+    svc = AsyncMock(spec=LLMService)
     svc.classify_task.return_value = TaskClassificationResult(
         kind=TaskKind.WAITING,
         normalized_title="Wait for Alex to send certificates",
