@@ -16,7 +16,7 @@ class Project(Base):
     slug: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
     google_tasklist_id: Mapped[str] = mapped_column(String(255), nullable=False)
     project_type: Mapped[str] = mapped_column(
-        Enum(ProjectType, name="project_type_enum", create_constraint=False), nullable=False
+        Enum(ProjectType, name="project_type_enum", create_constraint=False, values_callable=lambda e: [m.value for m in e]), nullable=False
     )
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(
