@@ -50,3 +50,4 @@ credentials/
 
 # Docker volumes
 postgres_data/
+*.json
