@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     llm_provider: str = "openai"
     llm_model: str = "gpt-4o"
     llm_api_key: str = ""
+    llm_base_url: str = ""
 
     inbox_poll_interval_seconds: int = 60
     daily_review_cron: str = "0 9 * * *"
