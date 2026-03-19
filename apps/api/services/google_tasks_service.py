@@ -34,7 +34,8 @@ class GoogleTasksService:
 
     def _get_service(self):
         if self._service is None:
-            from google.oauth2 import service_account
+            import json
+
             from googleapiclient.discovery import build
 
             if not os.path.exists(self._credentials_file):
@@ -42,10 +43,31 @@ class GoogleTasksService:
                     f"Credentials file not found: {self._credentials_file}"
                 )
 
-            credentials = service_account.Credentials.from_service_account_file(
-                self._credentials_file,
-                scopes=["https://www.googleapis.com/auth/tasks"],
-            )
+            with open(self._credentials_file) as f:
+                cred_data = json.load(f)
+
+            if cred_data.get("type") == "service_account":
+                from google.oauth2 import service_account
+
+                credentials = service_account.Credentials.from_service_account_file(
+                    self._credentials_file,
+                    scopes=["https://www.googleapis.com/auth/tasks"],
+                )
+            else:
+                # OAuth2 user token (produced by auth_tasks.py)
+                from google.auth.transport.requests import Request
+                from google.oauth2.credentials import Credentials
+
+                credentials = Credentials.from_authorized_user_file(
+                    self._credentials_file,
+                    scopes=["https://www.googleapis.com/auth/tasks"],
+                )
+                if credentials.expired and credentials.refresh_token:
+                    credentials.refresh(Request())
+                    # Persist refreshed token
+                    with open(self._credentials_file, "w") as f:
+                        f.write(credentials.to_json())
+
             self._service = build("tasks", "v1", credentials=credentials)
         return self._service
 
