@@ -19,7 +19,7 @@ async def run_daily_review() -> None:
     settings = get_settings()
 
     telegram = TelegramService(settings.telegram_bot_token, settings.telegram_chat_id)
-    llm = LLMService(settings.llm_provider, settings.llm_model, settings.llm_api_key)
+    llm = LLMService(settings.llm_provider, settings.llm_model, settings.llm_api_key, settings.llm_base_url)
 
     factory = get_session_factory()
     async with factory() as session:
