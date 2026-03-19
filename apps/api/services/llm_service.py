@@ -68,18 +68,24 @@ def _fallback_classification(raw_text: str) -> TaskClassificationResult:
 
 
 class LLMService:
-    def __init__(self, provider: str, model: str, api_key: str) -> None:
+    def __init__(self, provider: str, model: str, api_key: str, base_url: str = "") -> None:
         self._provider = provider
         self._model = model
         self._api_key = api_key
+        self._base_url = base_url
 
     def _get_client(self):
         from openai import OpenAI
 
+        if self._provider == "ollama":
+            return OpenAI(
+                base_url=self._base_url or "http://localhost:11434/v1",
+                api_key="ollama",
+            )
         return OpenAI(api_key=self._api_key)
 
     def _call_llm_sync(self, prompt: str) -> str:
-        """Synchronous OpenAI call — always run via anyio.to_thread.run_sync."""
+        """Synchronous LLM call — always run via anyio.to_thread.run_sync."""
         client = self._get_client()
         response = client.chat.completions.create(
             model=self._model,
