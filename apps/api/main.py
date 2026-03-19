@@ -463,11 +463,14 @@ def _build_telegram_dispatcher():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    import asyncio
+
     configure_logging()
     settings = get_settings()
     logger.info("starting_chiefly", env=settings.app_env)
 
     # Build and start Telegram bot
+    polling_task: asyncio.Task | None = None
     try:
         from aiogram import Bot
         from aiogram.client.default import DefaultBotProperties
@@ -480,6 +483,12 @@ async def lifespan(app: FastAPI):
         dp = _build_telegram_dispatcher()
         app.state.bot = bot
         app.state.dispatcher = dp
+
+        # Start long polling as a background task (works without a public URL)
+        polling_task = asyncio.create_task(
+            dp.start_polling(bot, handle_signals=False)
+        )
+        logger.info("telegram_polling_started")
     except Exception as e:
         logger.warning("telegram_init_failed", error=str(e))
         app.state.bot = None
@@ -499,6 +508,12 @@ async def lifespan(app: FastAPI):
     yield
 
     scheduler.shutdown()
+    if polling_task and not polling_task.done():
+        polling_task.cancel()
+        try:
+            await polling_task
+        except Exception:
+            pass
     if app.state.bot:
         await app.state.bot.session.close()
     logger.info("chiefly_shutdown")
