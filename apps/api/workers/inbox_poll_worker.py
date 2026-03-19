@@ -22,7 +22,7 @@ async def run_inbox_poll() -> None:
     settings = get_settings()
 
     google_tasks = GoogleTasksService(settings.google_credentials_file)
-    llm = LLMService(settings.llm_provider, settings.llm_model, settings.llm_api_key)
+    llm = LLMService(settings.llm_provider, settings.llm_model, settings.llm_api_key, settings.llm_base_url)
     routing = ProjectRoutingService()
     classification = ClassificationService(llm, routing)
     telegram = TelegramService(settings.telegram_bot_token, settings.telegram_chat_id)
