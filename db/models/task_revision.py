@@ -22,12 +22,12 @@ class TaskRevision(Base):
     raw_text: Mapped[str] = mapped_column(Text, nullable=False)
     proposal_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     user_decision: Mapped[str | None] = mapped_column(
-        Enum(ReviewAction, name="review_action_enum", create_constraint=False), nullable=True
+        Enum(ReviewAction, name="review_action_enum", create_constraint=False, values_callable=lambda e: [m.value for m in e]), nullable=True
     )
     user_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     final_title: Mapped[str | None] = mapped_column(String(500), nullable=True)
     final_kind: Mapped[str | None] = mapped_column(
-        Enum(TaskKind, name="task_kind_enum", create_constraint=False), nullable=True
+        Enum(TaskKind, name="task_kind_enum", create_constraint=False, values_callable=lambda e: [m.value for m in e]), nullable=True
     )
     final_project_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     final_next_action: Mapped[str | None] = mapped_column(String(500), nullable=True)
