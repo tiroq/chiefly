@@ -34,8 +34,8 @@ class LockRepository:
             await self._session.flush()
             return True
         except IntegrityError:
-            # Concurrent insert won the race; roll back the failed flush so the
-            # session remains usable and let the caller retry on the next poll.
+            # Concurrent insert won the race; expunge the failed object so the
+            # session remains usable without rolling back the outer transaction.
             await self._session.rollback()
             return False
 

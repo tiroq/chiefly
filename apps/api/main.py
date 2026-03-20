@@ -375,6 +375,9 @@ def _build_telegram_dispatcher():
         factory = get_session_factory()
 
         async with factory() as session:
+            from apps.api.services.revision_service import RevisionService
+            from core.schemas.llm import TaskClassificationResult
+
             task_repo = TaskItemRepository(session)
             project_repo = ProjectRepository(session)
 
@@ -393,6 +396,22 @@ def _build_telegram_dispatcher():
             if project:
                 task.project_id = project.id
                 await task_repo.save(task)
+
+                revision_svc = RevisionService(session)
+                cls_result = TaskClassificationResult(
+                    kind=task.kind or "task",
+                    normalized_title=task.normalized_title or task.raw_text,
+                    confidence=task.confidence_band or "medium",
+                    next_action=task.next_action,
+                )
+                await revision_svc.create_decision_revision(
+                    task_item_id=task.id,
+                    raw_text=task.raw_text,
+                    decision=ReviewAction.CHANGE_PROJECT,
+                    classification=cls_result,
+                    project_id=project.id,
+                )
+
                 await session.commit()
                 await callback.answer(f"Project changed to {project.name}")
             else:
@@ -404,6 +423,9 @@ def _build_telegram_dispatcher():
         factory = get_session_factory()
 
         async with factory() as session:
+            from apps.api.services.revision_service import RevisionService
+            from core.schemas.llm import TaskClassificationResult
+
             task_repo = TaskItemRepository(session)
 
             try:
@@ -418,12 +440,30 @@ def _build_telegram_dispatcher():
                 return
 
             try:
-                task.kind = TaskKind(payload.kind)
+                new_kind = TaskKind(payload.kind)
             except ValueError:
                 await callback.answer("Invalid task kind.", show_alert=True)
                 return
 
+            task.kind = new_kind
             await task_repo.save(task)
+
+            revision_svc = RevisionService(session)
+            cls_result = TaskClassificationResult(
+                kind=new_kind,
+                normalized_title=task.normalized_title or task.raw_text,
+                confidence=task.confidence_band or "medium",
+                next_action=task.next_action,
+            )
+            await revision_svc.create_decision_revision(
+                task_item_id=task.id,
+                raw_text=task.raw_text,
+                decision=ReviewAction.CHANGE_TYPE,
+                classification=cls_result,
+                project_id=task.project_id,
+                final_kind=new_kind,
+            )
+
             await session.commit()
             await callback.answer(f"Type changed to {payload.kind}")
 
@@ -432,10 +472,15 @@ def _build_telegram_dispatcher():
     @dp.message(F.text & ~F.text.startswith("/"))
     async def handle_text_message(message: Message):
         """Handle free-text messages – used for the edit title flow."""
+        import html as html_mod
+
         chat_id = str(message.chat.id)
         factory = get_session_factory()
 
         async with factory() as session:
+            from apps.api.services.revision_service import RevisionService
+            from core.schemas.llm import TaskClassificationResult
+
             session_repo = ReviewSessionRepository(session)
             task_repo = TaskItemRepository(session)
             pending = await session_repo.get_pending_edit_by_chat(chat_id)
@@ -451,12 +496,29 @@ def _build_telegram_dispatcher():
             task.normalized_title = new_title[:500]
             await task_repo.save(task)
 
+            revision_svc = RevisionService(session)
+            cls_result = TaskClassificationResult(
+                kind=task.kind or "task",
+                normalized_title=new_title[:500],
+                confidence=task.confidence_band or "medium",
+                next_action=task.next_action,
+            )
+            await revision_svc.create_decision_revision(
+                task_item_id=task.id,
+                raw_text=task.raw_text,
+                decision=ReviewAction.EDIT,
+                classification=cls_result,
+                project_id=task.project_id,
+                user_notes=f"Title changed to: {new_title[:500]}",
+            )
+
             pending.status = "pending"  # Back to normal pending
             await session_repo.save(pending)
             await session.commit()
 
         tg = TelegramService(settings.telegram_bot_token, settings.telegram_chat_id)
-        await tg.send_text(f"✅ Title updated to: <i>{new_title}</i>")
+        safe_title = html_mod.escape(new_title)
+        await tg.send_text(f"✅ Title updated to: <i>{safe_title}</i>")
 
     return dp
 
