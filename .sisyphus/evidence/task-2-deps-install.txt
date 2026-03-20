@@ -1,0 +1,116 @@
+Obtaining file:///home/mysterx/dev/chiefly-admin
+  Installing build dependencies: started
+  Installing build dependencies: finished with status 'done'
+  Checking if build backend supports build_editable: started
+  Checking if build backend supports build_editable: finished with status 'done'
+  Getting requirements to build editable: started
+  Getting requirements to build editable: finished with status 'done'
+  Installing backend dependencies: started
+  Installing backend dependencies: finished with status 'done'
+  Preparing editable metadata (pyproject.toml): started
+  Preparing editable metadata (pyproject.toml): finished with status 'done'
+Requirement already satisfied: aiogram>=3.7.0 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from chiefly==0.1.0) (3.26.0)
+Requirement already satisfied: alembic>=1.13.1 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from chiefly==0.1.0) (1.18.4)
+Requirement already satisfied: apscheduler>=3.10.4 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from chiefly==0.1.0) (3.11.2)
+Requirement already satisfied: asyncpg>=0.29.0 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from chiefly==0.1.0) (0.31.0)
+Requirement already satisfied: fastapi>=0.111.0 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from chiefly==0.1.0) (0.135.1)
+Requirement already satisfied: google-api-python-client>=2.130.0 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from chiefly==0.1.0) (2.193.0)
+Requirement already satisfied: google-auth-httplib2>=0.2.0 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from chiefly==0.1.0) (0.3.0)
+Requirement already satisfied: google-auth>=2.29.0 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from chiefly==0.1.0) (2.49.1)
+Requirement already satisfied: httpx>=0.27.0 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from chiefly==0.1.0) (0.28.1)
+Collecting itsdangerous>=2.1.0 (from chiefly==0.1.0)
+  Downloading itsdangerous-2.2.0-py3-none-any.whl.metadata (1.9 kB)
+Collecting jinja2>=3.1.0 (from chiefly==0.1.0)
+  Using cached jinja2-3.1.6-py3-none-any.whl.metadata (2.9 kB)
+Requirement already satisfied: openai>=1.30.1 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from chiefly==0.1.0) (2.29.0)
+Requirement already satisfied: psycopg2-binary>=2.9.9 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from chiefly==0.1.0) (2.9.11)
+Requirement already satisfied: pydantic-settings>=2.2.1 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from chiefly==0.1.0) (2.13.1)
+Requirement already satisfied: pydantic>=2.7.1 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from chiefly==0.1.0) (2.12.5)
+Requirement already satisfied: python-dotenv>=1.0.1 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from chiefly==0.1.0) (1.2.2)
+Collecting python-multipart>=0.0.9 (from chiefly==0.1.0)
+  Downloading python_multipart-0.0.22-py3-none-any.whl.metadata (1.8 kB)
+Requirement already satisfied: pytz>=2024.1 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from chiefly==0.1.0) (2026.1.post1)
+Requirement already satisfied: sqlalchemy>=2.0.30 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from chiefly==0.1.0) (2.0.48)
+Requirement already satisfied: structlog>=24.1.0 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from chiefly==0.1.0) (25.5.0)
+Requirement already satisfied: uvicorn>=0.29.0 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from uvicorn[standard]>=0.29.0->chiefly==0.1.0) (0.42.0)
+Requirement already satisfied: anyio>=4.4.0 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from chiefly==0.1.0) (4.12.1)
+Requirement already satisfied: factory-boy>=3.3.0 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from chiefly==0.1.0) (3.3.3)
+Requirement already satisfied: freezegun>=1.5.0 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from chiefly==0.1.0) (1.5.5)
+Requirement already satisfied: pytest-asyncio>=0.23.6 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from chiefly==0.1.0) (1.3.0)
+Requirement already satisfied: pytest-mock>=3.14.0 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from chiefly==0.1.0) (3.15.1)
+Requirement already satisfied: pytest>=8.2.0 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from chiefly==0.1.0) (9.0.2)
+Requirement already satisfied: aiofiles<26.0,>=23.2.1 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from aiogram>=3.7.0->chiefly==0.1.0) (25.1.0)
+Requirement already satisfied: aiohttp<3.14,>=3.9.0 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from aiogram>=3.7.0->chiefly==0.1.0) (3.13.3)
+Requirement already satisfied: certifi>=2023.7.22 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from aiogram>=3.7.0->chiefly==0.1.0) (2026.2.25)
+Requirement already satisfied: magic-filter<1.1,>=1.0.12 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from aiogram>=3.7.0->chiefly==0.1.0) (1.0.12)
+Requirement already satisfied: typing-extensions<=5.0,>=4.7.0 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from aiogram>=3.7.0->chiefly==0.1.0) (4.15.0)
+Requirement already satisfied: Mako in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from alembic>=1.13.1->chiefly==0.1.0) (1.3.10)
+Requirement already satisfied: idna>=2.8 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from anyio>=4.4.0->chiefly==0.1.0) (3.11)
+Requirement already satisfied: tzlocal>=3.0 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from apscheduler>=3.10.4->chiefly==0.1.0) (5.3.1)
+Requirement already satisfied: Faker>=0.7.0 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from factory-boy>=3.3.0->chiefly==0.1.0) (40.11.0)
+Requirement already satisfied: starlette>=0.46.0 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from fastapi>=0.111.0->chiefly==0.1.0) (0.52.1)
+Requirement already satisfied: typing-inspection>=0.4.2 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from fastapi>=0.111.0->chiefly==0.1.0) (0.4.2)
+Requirement already satisfied: annotated-doc>=0.0.2 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from fastapi>=0.111.0->chiefly==0.1.0) (0.0.4)
+Requirement already satisfied: python-dateutil>=2.7 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from freezegun>=1.5.0->chiefly==0.1.0) (2.9.0.post0)
+Requirement already satisfied: httplib2<1.0.0,>=0.19.0 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from google-api-python-client>=2.130.0->chiefly==0.1.0) (0.31.2)
+Requirement already satisfied: google-api-core!=2.0.*,!=2.1.*,!=2.2.*,!=2.3.0,<3.0.0,>=1.31.5 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from google-api-python-client>=2.130.0->chiefly==0.1.0) (2.30.0)
+Requirement already satisfied: uritemplate<5,>=3.0.1 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from google-api-python-client>=2.130.0->chiefly==0.1.0) (4.2.0)
+Requirement already satisfied: pyasn1-modules>=0.2.1 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from google-auth>=2.29.0->chiefly==0.1.0) (0.4.2)
+Requirement already satisfied: cryptography>=38.0.3 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from google-auth>=2.29.0->chiefly==0.1.0) (46.0.5)
+Requirement already satisfied: httpcore==1.* in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from httpx>=0.27.0->chiefly==0.1.0) (1.0.9)
+Requirement already satisfied: h11>=0.16 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from httpcore==1.*->httpx>=0.27.0->chiefly==0.1.0) (0.16.0)
+Requirement already satisfied: MarkupSafe>=2.0 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from jinja2>=3.1.0->chiefly==0.1.0) (3.0.3)
+Requirement already satisfied: distro<2,>=1.7.0 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from openai>=1.30.1->chiefly==0.1.0) (1.9.0)
+Requirement already satisfied: jiter<1,>=0.10.0 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from openai>=1.30.1->chiefly==0.1.0) (0.13.0)
+Requirement already satisfied: sniffio in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from openai>=1.30.1->chiefly==0.1.0) (1.3.1)
+Requirement already satisfied: tqdm>4 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from openai>=1.30.1->chiefly==0.1.0) (4.67.3)
+Requirement already satisfied: annotated-types>=0.6.0 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from pydantic>=2.7.1->chiefly==0.1.0) (0.7.0)
+Requirement already satisfied: pydantic-core==2.41.5 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from pydantic>=2.7.1->chiefly==0.1.0) (2.41.5)
+Requirement already satisfied: iniconfig>=1.0.1 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from pytest>=8.2.0->chiefly==0.1.0) (2.3.0)
+Requirement already satisfied: packaging>=22 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from pytest>=8.2.0->chiefly==0.1.0) (26.0)
+Requirement already satisfied: pluggy<2,>=1.5 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from pytest>=8.2.0->chiefly==0.1.0) (1.6.0)
+Requirement already satisfied: pygments>=2.7.2 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from pytest>=8.2.0->chiefly==0.1.0) (2.19.2)
+Requirement already satisfied: greenlet>=1 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from sqlalchemy>=2.0.30->chiefly==0.1.0) (3.3.2)
+Requirement already satisfied: click>=7.0 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from uvicorn>=0.29.0->uvicorn[standard]>=0.29.0->chiefly==0.1.0) (8.3.1)
+Requirement already satisfied: httptools>=0.6.3 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from uvicorn[standard]>=0.29.0->chiefly==0.1.0) (0.7.1)
+Requirement already satisfied: pyyaml>=5.1 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from uvicorn[standard]>=0.29.0->chiefly==0.1.0) (6.0.3)
+Requirement already satisfied: uvloop>=0.15.1 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from uvicorn[standard]>=0.29.0->chiefly==0.1.0) (0.22.1)
+Requirement already satisfied: watchfiles>=0.20 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from uvicorn[standard]>=0.29.0->chiefly==0.1.0) (1.1.1)
+Requirement already satisfied: websockets>=10.4 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from uvicorn[standard]>=0.29.0->chiefly==0.1.0) (16.0)
+Requirement already satisfied: aiohappyeyeballs>=2.5.0 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from aiohttp<3.14,>=3.9.0->aiogram>=3.7.0->chiefly==0.1.0) (2.6.1)
+Requirement already satisfied: aiosignal>=1.4.0 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from aiohttp<3.14,>=3.9.0->aiogram>=3.7.0->chiefly==0.1.0) (1.4.0)
+Requirement already satisfied: attrs>=17.3.0 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from aiohttp<3.14,>=3.9.0->aiogram>=3.7.0->chiefly==0.1.0) (26.1.0)
+Requirement already satisfied: frozenlist>=1.1.1 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from aiohttp<3.14,>=3.9.0->aiogram>=3.7.0->chiefly==0.1.0) (1.8.0)
+Requirement already satisfied: multidict<7.0,>=4.5 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from aiohttp<3.14,>=3.9.0->aiogram>=3.7.0->chiefly==0.1.0) (6.7.1)
+Requirement already satisfied: propcache>=0.2.0 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from aiohttp<3.14,>=3.9.0->aiogram>=3.7.0->chiefly==0.1.0) (0.4.1)
+Requirement already satisfied: yarl<2.0,>=1.17.0 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from aiohttp<3.14,>=3.9.0->aiogram>=3.7.0->chiefly==0.1.0) (1.23.0)
+Requirement already satisfied: cffi>=2.0.0 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from cryptography>=38.0.3->google-auth>=2.29.0->chiefly==0.1.0) (2.0.0)
+Requirement already satisfied: googleapis-common-protos<2.0.0,>=1.56.3 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from google-api-core!=2.0.*,!=2.1.*,!=2.2.*,!=2.3.0,<3.0.0,>=1.31.5->google-api-python-client>=2.130.0->chiefly==0.1.0) (1.73.0)
+Requirement already satisfied: protobuf<7.0.0,>=4.25.8 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from google-api-core!=2.0.*,!=2.1.*,!=2.2.*,!=2.3.0,<3.0.0,>=1.31.5->google-api-python-client>=2.130.0->chiefly==0.1.0) (6.33.6)
+Requirement already satisfied: proto-plus<2.0.0,>=1.22.3 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from google-api-core!=2.0.*,!=2.1.*,!=2.2.*,!=2.3.0,<3.0.0,>=1.31.5->google-api-python-client>=2.130.0->chiefly==0.1.0) (1.27.1)
+Requirement already satisfied: requests<3.0.0,>=2.20.0 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from google-api-core!=2.0.*,!=2.1.*,!=2.2.*,!=2.3.0,<3.0.0,>=1.31.5->google-api-python-client>=2.130.0->chiefly==0.1.0) (2.32.5)
+Requirement already satisfied: pyparsing<4,>=3.1 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from httplib2<1.0.0,>=0.19.0->google-api-python-client>=2.130.0->chiefly==0.1.0) (3.3.2)
+Requirement already satisfied: pyasn1<0.7.0,>=0.6.1 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from pyasn1-modules>=0.2.1->google-auth>=2.29.0->chiefly==0.1.0) (0.6.3)
+Requirement already satisfied: six>=1.5 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from python-dateutil>=2.7->freezegun>=1.5.0->chiefly==0.1.0) (1.17.0)
+Requirement already satisfied: pycparser in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from cffi>=2.0.0->cryptography>=38.0.3->google-auth>=2.29.0->chiefly==0.1.0) (3.0)
+Requirement already satisfied: charset_normalizer<4,>=2 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from requests<3.0.0,>=2.20.0->google-api-core!=2.0.*,!=2.1.*,!=2.2.*,!=2.3.0,<3.0.0,>=1.31.5->google-api-python-client>=2.130.0->chiefly==0.1.0) (3.4.6)
+Requirement already satisfied: urllib3<3,>=1.21.1 in /home/mysterx/dev/chiefly/.venv/lib/python3.12/site-packages (from requests<3.0.0,>=2.20.0->google-api-core!=2.0.*,!=2.1.*,!=2.2.*,!=2.3.0,<3.0.0,>=1.31.5->google-api-python-client>=2.130.0->chiefly==0.1.0) (2.6.3)
+Downloading itsdangerous-2.2.0-py3-none-any.whl (16 kB)
+Using cached jinja2-3.1.6-py3-none-any.whl (134 kB)
+Downloading python_multipart-0.0.22-py3-none-any.whl (24 kB)
+Checking if build backend supports build_editable: started
+Checking if build backend supports build_editable: finished with status 'done'
+Building wheels for collected packages: chiefly
+  Building editable for chiefly (pyproject.toml): started
+  Building editable for chiefly (pyproject.toml): finished with status 'done'
+  Created wheel for chiefly: filename=chiefly-0.1.0-py3-none-any.whl size=1317 sha256=9604489097cb8feb1bc672bdf08d7cee2374034987ab79e19d04424c4fc0c488
+  Stored in directory: /tmp/pip-ephem-wheel-cache-ebu4u5q9/wheels/3c/41/19/1a224245503f90bf149ca0ea4b373c2cdd962b9ecfa8d713cc
+Successfully built chiefly
+Installing collected packages: python-multipart, jinja2, itsdangerous, chiefly
+  Attempting uninstall: chiefly
+    Found existing installation: chiefly 0.1.0
+    Uninstalling chiefly-0.1.0:
+      Successfully uninstalled chiefly-0.1.0
+Successfully installed chiefly-0.1.0 itsdangerous-2.2.0 jinja2-3.1.6 python-multipart-0.0.22
+=== IMPORT VERIFICATION ===
+Import OK
