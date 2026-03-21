@@ -23,6 +23,14 @@ def is_htmx(request: Request) -> bool:
     return request.headers.get("HX-Request") == "true"
 
 
+def is_htmx_boosted(request: Request) -> bool:
+    """Return True when the request is from HTMX with hx-boost (HX-Boosted header).
+    
+    hx-boost requests expect the full page response, not just partials.
+    """
+    return request.headers.get("HX-Boosted") == "true"
+
+
 def require_admin(admin_token: str) -> Callable[..., object]:
     """Return a FastAPI dependency that validates the admin session cookie.
 
