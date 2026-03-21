@@ -12,6 +12,7 @@ from apps.api.services.intake_service import IntakeService
 from apps.api.services.llm_service import LLMService
 from apps.api.services.project_routing_service import ProjectRoutingService
 from apps.api.services.telegram_service import TelegramService
+from db.repositories.project_alias_repo import ProjectAliasRepo
 from db.session import get_session_factory
 
 logger = get_logger(__name__)
@@ -22,13 +23,16 @@ async def run_inbox_poll() -> None:
     settings = get_settings()
 
     google_tasks = GoogleTasksService(settings.google_credentials_file)
-    llm = LLMService(settings.llm_provider, settings.llm_model, settings.llm_api_key, settings.llm_base_url)
+    llm = LLMService(
+        settings.llm_provider, settings.llm_model, settings.llm_api_key, settings.llm_base_url
+    )
     routing = ProjectRoutingService()
-    classification = ClassificationService(llm, routing)
     telegram = TelegramService(settings.telegram_bot_token, settings.telegram_chat_id)
 
     factory = get_session_factory()
     async with factory() as session:
+        alias_repo = ProjectAliasRepo(session)
+        classification = ClassificationService(llm, routing, alias_repo=alias_repo)
         service = IntakeService(
             session=session,
             google_tasks=google_tasks,
