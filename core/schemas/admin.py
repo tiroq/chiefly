@@ -7,6 +7,7 @@ from db.models.task_revision import TaskRevision
 from db.models.system_event import SystemEvent
 from db.models.project import Project
 from db.models.project_alias import ProjectAlias
+from db.models.project_prompt_version import ProjectPromptVersion
 
 
 @dataclass
@@ -51,6 +52,7 @@ class ProjectWithStats:
     project: Project | None = None
     task_count: int = 0
     alias_count: int = 0
+    active_prompt_version: ProjectPromptVersion | None = None
 
 
 @dataclass
