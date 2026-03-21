@@ -197,6 +197,28 @@ Return ONLY valid JSON:
             "example_patterns": [],
         }
 
+    async def rewrite_title(self, raw_text: str) -> str:
+        """Ask the LLM to rewrite raw task text into a clean, actionable title.
+
+        Returns the rewritten title, or the original text if the LLM fails.
+        """
+        prompt = (
+            "You are a productivity assistant. Rewrite the following raw task note into a "
+            "concise, action-oriented title in clear English. "
+            "Start with a verb. Return ONLY the title — no JSON, no explanation, no quotes.\n\n"
+            f"Raw text: {raw_text}"
+        )
+        for attempt in range(2):
+            try:
+                result = await asyncio.to_thread(self._call_llm_sync, prompt)
+                title = result.strip().strip('"').strip("'")[:500]
+                if title:
+                    logger.info("llm_rewrite_success", model=self._model)
+                    return title
+            except Exception as exc:
+                logger.warning("llm_rewrite_failed", attempt=attempt, error=str(exc))
+        return raw_text
+
     def generate_daily_review(self, context_payload: dict[str, list[dict[str, str]]]) -> str:
         lines = ["Here is the daily task summary:"]
         if context_payload.get("active_tasks"):

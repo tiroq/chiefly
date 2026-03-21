@@ -34,6 +34,11 @@
       </button>
       {% endif %}
       <button class="btn btn-secondary"
+              hx-post="/admin/api/tasks/{{ result.task.id }}/rewrite"
+              hx-swap="none">
+        LLM Rewrite
+      </button>
+      <button class="btn btn-secondary"
               hx-post="/admin/api/tasks/{{ result.task.id }}/reclassify"
               hx-swap="none">
         Re-classify

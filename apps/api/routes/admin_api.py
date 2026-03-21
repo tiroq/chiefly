@@ -242,6 +242,52 @@ async def resend_proposal(
         )
 
 
+@router.post("/{task_id}/rewrite")
+async def rewrite_task_title(
+    task_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+) -> JSONResponse:
+    """Use LLM to rewrite the raw task text into a clean normalized title."""
+    try:
+        task_repo = TaskItemRepository(session)
+        task = await task_repo.get_by_id(task_id)
+        if task is None:
+            raise HTTPException(status_code=404, detail="Task not found")
+
+        llm_svc = LLMService(
+            provider=settings.llm_provider,
+            model=settings.llm_model,
+            api_key=settings.llm_api_key,
+            base_url=settings.llm_base_url,
+        )
+        rewritten = await llm_svc.rewrite_title(task.raw_text)
+        task.normalized_title = rewritten
+        task.llm_model = settings.llm_model
+        await task_repo.save(task)
+        await session.commit()
+
+        event_svc = SystemEventService(SystemEventRepo(session))
+        await event_svc.log_admin_action(
+            session,
+            "task_title_rewritten",
+            f"Task {task_id} title rewritten by LLM",
+            task_item_id=task_id,
+        )
+
+        return JSONResponse(
+            content={"success": True, "normalized_title": rewritten},
+            headers={"HX-Trigger": '{"showToast": "Title rewritten by LLM"}'},
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("rewrite_task_title_failed", task_id=str(task_id), error=str(exc))
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"Rewrite failed: {exc}"},
+        )
+
+
 @router.post("/import-from-google")
 async def import_tasks_from_google(
     session: AsyncSession = Depends(get_session),
