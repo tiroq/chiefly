@@ -60,7 +60,7 @@ class TestClassificationService:
         assert project.slug == "nft-gateway"
 
     @pytest.mark.asyncio
-    async def test_classify_keyword_overrides_llm_guess(self, projects):
+    async def test_classify_without_alias_repo_uses_llm_guess(self, projects):
         mock_llm = AsyncMock(spec=LLMService)
         mock_llm.classify_task.return_value = TaskClassificationResult(
             kind=TaskKind.TASK,
@@ -73,9 +73,8 @@ class TestClassificationService:
         svc = ClassificationService(mock_llm, routing)
 
         result, project = await svc.classify("Call kids school", projects)
-        # Keyword "kids" should route to "family" despite LLM saying Personal
         assert project is not None
-        assert project.slug == "family"
+        assert project.slug == "personal"
 
     @pytest.mark.asyncio
     async def test_classify_fallback_to_personal(self, projects):
