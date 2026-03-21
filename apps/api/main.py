@@ -8,10 +8,14 @@ import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from starlette.staticfiles import StaticFiles
 
 from apps.api.config import get_settings
 from apps.api.logging import configure_logging, get_logger
 from apps.api.routes import admin, health, telegram_webhook
+from apps.api.routes.admin_ui import router as admin_ui_router
+from apps.api.routes.admin_api import router as admin_api_router
+from apps.api.admin.auth import create_login_router, htmx_exception_handler
 from apps.api.services.scheduler_service import setup_scheduler
 from apps.api.workers.daily_review_worker import run_daily_review
 from apps.api.workers.inbox_poll_worker import run_inbox_poll
@@ -591,7 +595,26 @@ def create_app() -> FastAPI:
     )
     app.include_router(health.router)
     app.include_router(telegram_webhook.router)
+
+    # Mount static files for admin UI
+    app.mount("/static/admin", StaticFiles(directory="apps/api/static/admin"), name="admin_static")
+
+    # Register HTMX exception handler
+    app.add_exception_handler(Exception, htmx_exception_handler)
+
+    # Include admin UI router BEFORE old admin router to avoid route conflicts
+    app.include_router(admin_ui_router, prefix="/admin")
+
+    # Include admin API router
+    app.include_router(admin_api_router, prefix="/admin/api")
+
+    # Include login router (has its own /admin/login prefix)
+    settings = get_settings()
+    app.include_router(create_login_router(settings.admin_token))
+
+    # Legacy admin JSON API routes (after UI routes to avoid conflicts)
     app.include_router(admin.router)
+    
     return app
 
 

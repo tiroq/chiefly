@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     app_env: str = "development"
     log_level: str = "INFO"
 
-    database_url: str = "postgresql+asyncpg://chiefly:chiefly@localhost:5432/chiefly"
+    database_url: str = "postgresql+asyncpg://chiefly:chiefly@localhost:5433/chiefly"
 
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     inbox_poll_interval_seconds: int = 60
     daily_review_cron: str = "0 9 * * *"
     timezone: str = "UTC"
+
+    admin_token: str = "admin"
 
     model_config = SettingsConfigDict(
         env_file=".env",
