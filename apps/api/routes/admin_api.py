@@ -5,7 +5,7 @@ Admin action API routes for task management: retry, re-classify, re-send.
 import uuid
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Form, HTTPException
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,14 +13,16 @@ from apps.api.admin.auth import require_admin
 from apps.api.config import get_settings
 from apps.api.dependencies import get_session
 from apps.api.services.classification_service import ClassificationService
+from apps.api.services.google_tasks_service import GoogleTasksService
 from apps.api.services.llm_service import LLMService
 from apps.api.services.project_routing_service import ProjectRoutingService
 from apps.api.services.revision_service import RevisionService
 from apps.api.services.system_event_service import SystemEventService
 from apps.api.services.telegram_service import TelegramService
-from core.domain.enums import TaskStatus
+from core.domain.enums import TaskKind, TaskStatus
 from core.domain.state_machine import can_transition
 from core.schemas.llm import TaskClassificationResult
+from db.models.task_item import TaskItem
 from db.repositories.project_repo import ProjectRepository
 from db.repositories.project_alias_repo import ProjectAliasRepo
 from db.repositories.system_event_repo import SystemEventRepo
@@ -237,4 +239,134 @@ async def resend_proposal(
         return JSONResponse(
             status_code=500,
             content={"error": f"Failed to resend proposal: {exc}"},
+        )
+
+
+@router.post("/import-from-google")
+async def import_tasks_from_google(
+    session: AsyncSession = Depends(get_session),
+) -> JSONResponse:
+    """Import existing tasks from all active project Google Task lists into the DB."""
+    try:
+        google_svc = GoogleTasksService(settings.google_credentials_file)
+        project_repo = ProjectRepository(session)
+        task_repo = TaskItemRepository(session)
+
+        projects = await project_repo.list_active()
+        imported = 0
+        skipped = 0
+
+        for project in projects:
+            if not project.google_tasklist_id:
+                continue
+            # Inbox is polled by the intake service; skip it here
+            if project.google_tasklist_id == settings.google_tasks_inbox_list_id:
+                continue
+
+            try:
+                gtasks = google_svc.list_tasks(project.google_tasklist_id)
+            except Exception as exc:
+                logger.warning(
+                    "import_tasks_list_failed",
+                    project_id=str(project.id),
+                    error=str(exc),
+                )
+                continue
+
+            for gtask in gtasks:
+                if not gtask.title:
+                    continue
+                existing = await task_repo.get_by_source_google_task_id(gtask.id)
+                if existing:
+                    skipped += 1
+                    continue
+                task = TaskItem(
+                    source_google_task_id=gtask.id,
+                    source_google_tasklist_id=project.google_tasklist_id,
+                    raw_text=gtask.title,
+                    status=TaskStatus.ROUTED.value,
+                    project_id=project.id,
+                    is_processed=True,
+                )
+                await task_repo.create(task)
+                imported += 1
+
+        await session.commit()
+
+        event_svc = SystemEventService(SystemEventRepo(session))
+        await event_svc.log_admin_action(
+            session,
+            "tasks_imported",
+            f"Imported {imported} tasks from Google Tasks ({skipped} already existed)",
+        )
+
+        msg = f"Imported {imported} task(s). {skipped} already in DB."
+        return JSONResponse(
+            content={"success": True, "imported": imported, "skipped": skipped},
+            headers={"HX-Trigger": f'{{"showToast": "{msg}"}}'},
+        )
+    except Exception as exc:
+        logger.error("import_tasks_from_google_failed", error=str(exc))
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"Import failed: {exc}"},
+        )
+
+
+@router.post("/{task_id}/edit")
+async def edit_task(
+    task_id: uuid.UUID,
+    normalized_title: str = Form(""),
+    kind: str = Form(""),
+    project_id: str = Form(""),
+    session: AsyncSession = Depends(get_session),
+) -> JSONResponse:
+    """Manually edit task fields: normalized title, kind, project."""
+    try:
+        task_repo = TaskItemRepository(session)
+        task = await task_repo.get_by_id(task_id)
+        if task is None:
+            raise HTTPException(status_code=404, detail="Task not found")
+
+        if normalized_title.strip():
+            task.normalized_title = normalized_title.strip()
+
+        if kind.strip():
+            try:
+                task.kind = TaskKind(kind.strip()).value
+            except ValueError:
+                raise HTTPException(status_code=400, detail=f"Invalid kind: {kind!r}")
+        else:
+            task.kind = None
+
+        if project_id.strip():
+            try:
+                task.project_id = uuid.UUID(project_id.strip())
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid project_id")
+        else:
+            task.project_id = None
+
+        await task_repo.save(task)
+        await session.commit()
+
+        event_svc = SystemEventService(SystemEventRepo(session))
+        await event_svc.log_admin_action(
+            session,
+            "task_edited",
+            f"Task {task_id} edited manually",
+            task_item_id=task_id,
+        )
+
+        return JSONResponse(
+            content={"success": True, "message": "Task updated"},
+            headers={"HX-Trigger": '{"showToast": "Task updated"}'},
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("edit_task_failed", task_id=str(task_id), error=str(exc))
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"Failed to edit task: {exc}"},
         )
