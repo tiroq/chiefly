@@ -25,7 +25,12 @@
         </td>
         <td>{{ version.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
         <td>{{ version.change_note or '-' }}</td>
-        <td>
+        <td style="display: flex; gap: 0.5rem;">
+          <button hx-get="/admin/projects/{{ result.project.id }}/prompts/{{ version.id }}" 
+                  hx-target="body" 
+                  hx-swap="beforeend"
+                  class="btn btn-secondary" 
+                  style="padding: 0.25rem 0.5rem; font-size: 0.75rem;">View</button>
           {% if not version.is_active %}
           <form hx-post="/admin/projects/{{ result.project.id }}/prompts/{{ version.id }}/activate" 
                 hx-target="body" 

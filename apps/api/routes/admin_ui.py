@@ -218,10 +218,15 @@ async def admin_task_detail(
     if result.task.project_id:
         project = await project_repo.get_by_id(result.task.project_id)
 
+    projects = await project_repo.list_active()
+    kinds = [k.value for k in TaskKind]
+
     context = {
         "request": request,
         "result": result,
         "project": project,
+        "projects": projects,
+        "kinds": kinds,
         "title": "Task Detail",
     }
 
@@ -336,6 +341,29 @@ async def activate_prompt_version(
     return RedirectResponse(
         f"/admin/projects/{project_id}?msg=Prompt+version+activated", status_code=303
     )
+
+
+@router.get("/projects/{project_id}/prompts/{version_id}")
+async def view_prompt_version(
+    request: Request,
+    project_id: uuid.UUID,
+    version_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+):
+    """View detailed information for a specific prompt version."""
+    version_repo = ProjectPromptVersionRepo(session)
+    version = await version_repo.get_by_id(version_id)
+    
+    if version is None:
+        raise HTTPException(status_code=404, detail="Prompt version not found")
+    
+    context = {
+        "request": request,
+        "version": version,
+        "project_id": project_id,
+    }
+    
+    return templates.TemplateResponse("admin/partials/_prompt_detail_modal.html", context)
 
 
 @router.post("/projects/{project_id}/aliases")

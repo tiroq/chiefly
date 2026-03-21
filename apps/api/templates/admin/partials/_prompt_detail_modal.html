@@ -1,0 +1,240 @@
+<!-- Prompt Version Detail Modal -->
+<div id="prompt-detail-modal" style="
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1rem;
+">
+  <div style="
+    background: white;
+    border-radius: 8px;
+    max-width: 900px;
+    width: 100%;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+  ">
+    <!-- Header -->
+    <div style="
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1.5rem;
+      border-bottom: 1px solid var(--color-border);
+      position: sticky;
+      top: 0;
+      background: white;
+    ">
+      <div>
+        <h2 style="margin: 0; font-size: 1.25rem;">Prompt Version {{ version.version_no }}</h2>
+        <p style="margin: 0.25rem 0 0 0; color: var(--color-text-muted); font-size: 0.875rem;">
+          {{ version.created_at.strftime('%Y-%m-%d %H:%M:%S') }}
+          {% if version.created_by %}
+          by {{ version.created_by }}
+          {% endif %}
+        </p>
+      </div>
+      <button type="button" onclick="document.getElementById('prompt-detail-modal').remove()" 
+              style="
+                background: none;
+                border: none;
+                font-size: 1.5rem;
+                cursor: pointer;
+                color: var(--color-text-muted);
+                padding: 0;
+                width: 2rem;
+                height: 2rem;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+              " 
+              title="Close">
+        ×
+      </button>
+    </div>
+
+    <!-- Content -->
+    <div style="padding: 1.5rem;">
+      <!-- Status Badge -->
+      <div style="margin-bottom: 1.5rem;">
+        {% if version.is_active %}
+        <span style="
+          background-color: #dcfce7;
+          color: #166534;
+          padding: 0.375rem 0.75rem;
+          border-radius: 4px;
+          font-size: 0.875rem;
+          font-weight: 500;
+        ">Active</span>
+        {% else %}
+        <span style="
+          background-color: #f1f5f9;
+          color: #64748b;
+          padding: 0.375rem 0.75rem;
+          border-radius: 4px;
+          font-size: 0.875rem;
+          font-weight: 500;
+        ">Inactive</span>
+        {% endif %}
+      </div>
+
+      <!-- Title -->
+      {% if version.title %}
+      <div style="margin-bottom: 1.5rem;">
+        <h3 style="margin: 0 0 0.5rem 0; font-size: 1rem; color: var(--color-text-muted);">Title</h3>
+        <p style="
+          margin: 0;
+          padding: 0.75rem;
+          background: var(--color-surface);
+          border: 1px solid var(--color-border);
+          border-radius: 4px;
+          font-weight: 500;
+        ">{{ version.title }}</p>
+      </div>
+      {% endif %}
+
+      <!-- Description -->
+      {% if version.description_text %}
+      <div style="margin-bottom: 1.5rem;">
+        <h3 style="margin: 0 0 0.5rem 0; font-size: 1rem; color: var(--color-text-muted);">Description</h3>
+        <pre style="
+          margin: 0;
+          padding: 0.75rem;
+          background: var(--color-surface);
+          border: 1px solid var(--color-border);
+          border-radius: 4px;
+          overflow-x: auto;
+          white-space: pre-wrap;
+          word-wrap: break-word;
+          font-family: inherit;
+          font-size: 0.875rem;
+          line-height: 1.5;
+        ">{{ version.description_text }}</pre>
+      </div>
+      {% endif %}
+
+      <!-- Classification Prompt -->
+      {% if version.classification_prompt_text %}
+      <div style="margin-bottom: 1.5rem;">
+        <h3 style="margin: 0 0 0.5rem 0; font-size: 1rem; color: var(--color-text-muted);">Classification Prompt</h3>
+        <pre style="
+          margin: 0;
+          padding: 0.75rem;
+          background: var(--color-surface);
+          border: 1px solid var(--color-border);
+          border-radius: 4px;
+          overflow-x: auto;
+          white-space: pre-wrap;
+          word-wrap: break-word;
+          font-family: inherit;
+          font-size: 0.875rem;
+          line-height: 1.5;
+        ">{{ version.classification_prompt_text }}</pre>
+      </div>
+      {% endif %}
+
+      <!-- Routing Prompt -->
+      {% if version.routing_prompt_text %}
+      <div style="margin-bottom: 1.5rem;">
+        <h3 style="margin: 0 0 0.5rem 0; font-size: 1rem; color: var(--color-text-muted);">Routing Prompt</h3>
+        <pre style="
+          margin: 0;
+          padding: 0.75rem;
+          background: var(--color-surface);
+          border: 1px solid var(--color-border);
+          border-radius: 4px;
+          overflow-x: auto;
+          white-space: pre-wrap;
+          word-wrap: break-word;
+          font-family: inherit;
+          font-size: 0.875rem;
+          line-height: 1.5;
+        ">{{ version.routing_prompt_text }}</pre>
+      </div>
+      {% endif %}
+
+      <!-- Examples JSON -->
+      {% if version.examples_json %}
+      <div style="margin-bottom: 1.5rem;">
+        <h3 style="margin: 0 0 0.5rem 0; font-size: 1rem; color: var(--color-text-muted);">Examples (JSON)</h3>
+        <pre style="
+          margin: 0;
+          padding: 0.75rem;
+          background: var(--color-surface);
+          border: 1px solid var(--color-border);
+          border-radius: 4px;
+          overflow-x: auto;
+          white-space: pre;
+          word-wrap: break-word;
+          font-family: monospace;
+          font-size: 0.8rem;
+          line-height: 1.5;
+        ">{{ version.examples_json | tojson(indent=2) }}</pre>
+      </div>
+      {% endif %}
+
+      <!-- Change Note -->
+      {% if version.change_note %}
+      <div style="margin-bottom: 1.5rem;">
+        <h3 style="margin: 0 0 0.5rem 0; font-size: 1rem; color: var(--color-text-muted);">Change Note</h3>
+        <div style="
+          margin: 0;
+          padding: 0.75rem;
+          background: var(--color-surface);
+          border: 1px solid var(--color-border);
+          border-radius: 4px;
+          border-left: 4px solid #f59e0b;
+        ">
+          <p style="margin: 0; color: var(--color-text); line-height: 1.5;">{{ version.change_note }}</p>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- Footer -->
+    <div style="
+      padding: 1.5rem;
+      border-top: 1px solid var(--color-border);
+      display: flex;
+      gap: 0.5rem;
+      justify-content: flex-end;
+    ">
+      <button type="button" onclick="document.getElementById('prompt-detail-modal').remove()" 
+              class="btn btn-secondary">Close</button>
+      {% if not version.is_active %}
+      <form hx-post="/admin/projects/{{ project_id }}/prompts/{{ version.id }}/activate" 
+            hx-target="body" 
+            method="post" 
+            style="display: inline;">
+        <button type="submit" class="btn btn-primary">Activate</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<script>
+// Close modal when clicking outside
+document.getElementById('prompt-detail-modal').addEventListener('click', function(e) {
+  if (e.target === this) {
+    this.remove();
+  }
+});
+
+// Close modal with Escape key
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') {
+    const modal = document.getElementById('prompt-detail-modal');
+    if (modal) {
+      modal.remove();
+    }
+  }
+});
+</script>
