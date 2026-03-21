@@ -25,6 +25,8 @@ logger = get_logger(__name__)
 
 def _build_telegram_dispatcher():
     """Build aiogram Dispatcher with all handlers registered."""
+    from importlib import import_module
+
     from aiogram import Dispatcher, F
     from aiogram.filters import Command
     from aiogram.types import CallbackQuery, Message
@@ -53,6 +55,10 @@ def _build_telegram_dispatcher():
     dp = Dispatcher()
     settings = get_settings()
 
+    def _queue_service(session, tg):
+        queue_service_module = import_module("apps.api.services.review_queue_service")
+        return queue_service_module.ReviewQueueService(session, tg)
+
     # ── Commands ──────────────────────────────────────────────────────────────
 
     @dp.message(Command("start"))
@@ -64,6 +70,8 @@ def _build_telegram_dispatcher():
             "/help – show this help\n"
             "/inbox – show pending proposals\n"
             "/today – show today's tasks\n"
+            "/next – show next item to review\n"
+            "/backlog – show review queue\n"
             "/review – generate and send daily review\n"
             "/stats – show task statistics"
         )
@@ -76,6 +84,8 @@ def _build_telegram_dispatcher():
             "/inbox – pending tasks awaiting review\n"
             "/today – active tasks for today\n"
             "/projects – list available projects\n"
+            "/next – show next item to review\n"
+            "/backlog – show review queue\n"
             "/review – trigger daily review now\n"
             "/stats – task counts by status"
         )
@@ -139,6 +149,44 @@ def _build_telegram_dispatcher():
                     lines.append(f"  {status}: {len(tasks)}")
             await message.answer("\n".join(lines))
 
+    @dp.message(Command("next"))
+    async def cmd_next(message: Message):
+        factory = get_session_factory()
+        tg = TelegramService(settings.telegram_bot_token, settings.telegram_chat_id)
+
+        async with factory() as session:
+            queue_svc = _queue_service(session, tg)
+            sent = await queue_svc.send_next()
+
+        if not sent:
+            await message.answer("✅ No more items in the review queue.")
+
+    @dp.message(Command("backlog"))
+    async def cmd_backlog(message: Message):
+        factory = get_session_factory()
+        tg = TelegramService(settings.telegram_bot_token, settings.telegram_chat_id)
+
+        async with factory() as session:
+            queue_svc = _queue_service(session, tg)
+            status = await queue_svc.get_queue_status()
+
+        total_queued = status["total_queued"] if isinstance(status["total_queued"], int) else 0
+        has_active = bool(status["has_active"])
+        items = status["items"] if isinstance(status["items"], list) else []
+
+        if total_queued == 0 and not has_active:
+            await message.answer("✅ Queue is empty. Nothing to review.")
+            return
+
+        lines = [f"📋 <b>Review Queue ({total_queued} pending):</b>"]
+        if has_active:
+            lines.append("🔵 1 item currently under review")
+        for i, title in enumerate(items, 1):
+            lines.append(f"  {i}. {title}")
+        if total_queued > len(items):
+            lines.append(f"  ... and {total_queued - len(items)} more")
+        await message.answer("\n".join(lines))
+
     # ── Callback Handlers ─────────────────────────────────────────────────────
 
     async def _get_task_and_session(
@@ -167,9 +215,7 @@ def _build_telegram_dispatcher():
             session_repo = ReviewSessionRepository(session)
 
             try:
-                task, review_session = await _get_task_and_session(
-                    payload.task_id, session
-                )
+                task, review_session = await _get_task_and_session(payload.task_id, session)
             except TaskNotFoundError:
                 await callback.answer("Task not found!", show_alert=True)
                 return
@@ -180,11 +226,7 @@ def _build_telegram_dispatcher():
 
             # Get project info for routing
             project_repo = ProjectRepository(session)
-            project = (
-                await project_repo.get_by_id(task.project_id)
-                if task.project_id
-                else None
-            )
+            project = await project_repo.get_by_id(task.project_id) if task.project_id else None
 
             # Move task in Google Tasks
             gtasks = GoogleTasksService(settings.google_credentials_file)
@@ -245,10 +287,15 @@ def _build_telegram_dispatcher():
             callback.message.text + "\n\n✅ <b>Confirmed and routed.</b>"
         )
 
+        async with factory() as session:
+            queue_svc = _queue_service(session, tg)
+            await queue_svc.send_next()
+
     @dp.callback_query(F.data.startswith("discard:"))
     async def handle_discard(callback: CallbackQuery):
         payload = CallbackPayload.decode(callback.data)
         factory = get_session_factory()
+        tg = TelegramService(settings.telegram_bot_token, settings.telegram_chat_id)
 
         async with factory() as session:
             from apps.api.services.revision_service import RevisionService
@@ -259,9 +306,7 @@ def _build_telegram_dispatcher():
             session_repo = ReviewSessionRepository(session)
 
             try:
-                task, review_session = await _get_task_and_session(
-                    payload.task_id, session
-                )
+                task, review_session = await _get_task_and_session(payload.task_id, session)
             except TaskNotFoundError:
                 await callback.answer("Task not found!", show_alert=True)
                 return
@@ -291,9 +336,11 @@ def _build_telegram_dispatcher():
             await session.commit()
 
         await callback.answer("🗑 Task discarded.")
-        await callback.message.edit_text(
-            callback.message.text + "\n\n🗑 <b>Discarded.</b>"
-        )
+        await callback.message.edit_text(callback.message.text + "\n\n🗑 <b>Discarded.</b>")
+
+        async with factory() as session:
+            queue_svc = _queue_service(session, tg)
+            await queue_svc.send_next()
 
     @dp.callback_query(F.data.startswith("change_project:"))
     async def handle_change_project(callback: CallbackQuery):
@@ -302,11 +349,27 @@ def _build_telegram_dispatcher():
         tg = TelegramService(settings.telegram_bot_token, settings.telegram_chat_id)
 
         async with factory() as session:
+            task_repo = TaskItemRepository(session)
             project_repo = ProjectRepository(session)
+
+            task_uuid = parse_uuid(payload.task_id)
+            task = await task_repo.get_by_id(task_uuid)
             projects = await project_repo.list_active()
 
+            current_project_name = None
+            if task and task.project_id:
+                current_project = await project_repo.get_by_id(task.project_id)
+                if current_project:
+                    current_project_name = current_project.name
+
         project_list = [(p.name, p.slug) for p in projects]
-        await tg.send_project_picker(task_id=payload.task_id, projects=project_list)
+        task_title = task.normalized_title or task.raw_text if task else None
+        await tg.send_project_picker(
+            task_id=payload.task_id,
+            projects=project_list,
+            task_title=task_title,
+            current_project=current_project_name,
+        )
         await callback.answer()
 
     @dp.callback_query(F.data.startswith("change_type:"))
@@ -324,9 +387,7 @@ def _build_telegram_dispatcher():
         async with factory() as session:
             session_repo = ReviewSessionRepository(session)
             try:
-                task, review_session = await _get_task_and_session(
-                    payload.task_id, session
-                )
+                task, review_session = await _get_task_and_session(payload.task_id, session)
             except TaskNotFoundError:
                 await callback.answer("Task not found!", show_alert=True)
                 return
@@ -337,9 +398,7 @@ def _build_telegram_dispatcher():
                 await session.commit()
 
         await callback.answer()
-        await callback.message.answer(
-            "✏️ Please send me the new title for this task:"
-        )
+        await callback.message.answer("✏️ Please send me the new title for this task:")
 
     @dp.callback_query(F.data.startswith("show_steps:"))
     async def handle_show_steps(callback: CallbackQuery):
@@ -551,9 +610,7 @@ async def lifespan(app: FastAPI):
         app.state.dispatcher = dp
 
         # Start long polling as a background task (works without a public URL)
-        polling_task = asyncio.create_task(
-            dp.start_polling(bot, handle_signals=False)
-        )
+        polling_task = asyncio.create_task(dp.start_polling(bot, handle_signals=False))
         logger.info("telegram_polling_started")
     except Exception as e:
         logger.warning("telegram_init_failed", error=str(e))
@@ -614,7 +671,7 @@ def create_app() -> FastAPI:
 
     # Legacy admin JSON API routes (after UI routes to avoid conflicts)
     app.include_router(admin.router)
-    
+
     return app
 
 
