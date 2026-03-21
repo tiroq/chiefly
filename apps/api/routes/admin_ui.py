@@ -7,7 +7,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.domain.enums import TaskKind, TaskStatus
-from apps.api.admin.auth import is_htmx, require_admin
+from apps.api.admin.auth import is_htmx, is_htmx_boosted, require_admin
 from apps.api.config import get_settings
 from apps.api.dependencies import get_session
 from apps.api.services.admin_dashboard_service import AdminDashboardService
@@ -49,7 +49,7 @@ async def admin_dashboard(
         "title": "Dashboard",
     }
 
-    if is_htmx(request):
+    if is_htmx(request) and not is_htmx_boosted(request):
         return templates.TemplateResponse("admin/partials/_dashboard.html", context)
     return templates.TemplateResponse("admin/pages/dashboard.html", context)
 
@@ -61,9 +61,19 @@ async def admin_projects(
 ):
     project_repo = ProjectRepository(session)
     alias_repo = ProjectAliasRepo(session)
+    version_repo = ProjectPromptVersionRepo(session)
+    event_repo = SystemEventRepo(session)
+    
     svc = AdminProjectsService(project_repo, alias_repo)
+    prompt_svc = PromptVersioningService(version_repo, event_repo)
 
     result = await svc.list_projects(session)
+    
+    # Fetch active prompt versions for each project
+    for item in result.items:
+        if item.project:
+            active_version = await prompt_svc.get_active_for_project(session, item.project.id)
+            item.active_prompt_version = active_version
 
     context = {
         "request": request,
@@ -71,7 +81,7 @@ async def admin_projects(
         "title": "Projects",
     }
 
-    if is_htmx(request):
+    if is_htmx(request) and not is_htmx_boosted(request):
         return templates.TemplateResponse("admin/partials/_project_table.html", context)
     return templates.TemplateResponse("admin/pages/projects.html", context)
 
@@ -92,8 +102,18 @@ async def sync_projects(
     )
 
     alias_repo = ProjectAliasRepo(session)
+    version_repo = ProjectPromptVersionRepo(session)
+    event_repo = SystemEventRepo(session)
+    
     projects_svc = AdminProjectsService(project_repo, alias_repo)
+    prompt_svc = PromptVersioningService(version_repo, event_repo)
     project_result = await projects_svc.list_projects(session)
+    
+    # Fetch active prompt versions for each project
+    for item in project_result.items:
+        if item.project:
+            active_version = await prompt_svc.get_active_for_project(session, item.project.id)
+            item.active_prompt_version = active_version
 
     context = {
         "request": request,
@@ -102,7 +122,7 @@ async def sync_projects(
         "title": "Projects",
     }
 
-    if is_htmx(request):
+    if is_htmx(request) and not is_htmx_boosted(request):
         return templates.TemplateResponse("admin/partials/_project_table.html", context)
     return RedirectResponse("/admin/projects?msg=Sync+complete", status_code=303)
 
@@ -131,7 +151,7 @@ async def admin_events(
         "title": "Events",
     }
 
-    if is_htmx(request):
+    if is_htmx(request) and not is_htmx_boosted(request):
         return templates.TemplateResponse("admin/partials/_event_table.html", context)
     return templates.TemplateResponse("admin/pages/events.html", context)
 
@@ -194,7 +214,7 @@ async def admin_tasks_list(
         "title": "Tasks",
     }
 
-    if is_htmx(request):
+    if is_htmx(request) and not is_htmx_boosted(request):
         return templates.TemplateResponse("admin/partials/_task_table.html", context)
     return templates.TemplateResponse("admin/pages/tasks.html", context)
 
@@ -230,7 +250,7 @@ async def admin_task_detail(
         "title": "Task Detail",
     }
 
-    if is_htmx(request):
+    if is_htmx(request) and not is_htmx_boosted(request):
         return templates.TemplateResponse("admin/partials/_task_detail.html", context)
     return templates.TemplateResponse("admin/pages/task_detail.html", context)
 
@@ -264,7 +284,7 @@ async def project_detail(
         "msg": msg,
     }
 
-    if is_htmx(request):
+    if is_htmx(request) and not is_htmx_boosted(request):
         return templates.TemplateResponse("admin/partials/_project_detail.html", context)
     return templates.TemplateResponse("admin/pages/project_detail.html", context)
 
