@@ -1,0 +1,72 @@
+{% from "admin/macros/pagination.html" import pagination %}
+
+<div class="table-container" style="overflow-x: auto;">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Title</th>
+        <th>Status</th>
+        <th>Kind</th>
+        <th>Project</th>
+        <th>Created</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for task in result.items %}
+      <tr>
+        <td>
+          <div style="font-weight: 500; max-width: 300px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+            {{ task.normalized_title or task.raw_text[:50] + ('...' if task.raw_text|length > 50 else '') }}
+          </div>
+        </td>
+        <td>
+          <span class="badge badge-{{ task.status.lower() if task.status else 'new' }}">
+            {{ task.status }}
+          </span>
+        </td>
+        <td>
+          {% if task.kind %}
+          <span class="badge badge-{{ task.kind.lower() }}">
+            {{ task.kind }}
+          </span>
+          {% else %}
+          <span class="text-muted">-</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if task.project_id %}
+            {% for p in projects %}
+              {% if p.id == task.project_id %}
+                {{ p.name }}
+              {% endif %}
+            {% endfor %}
+          {% else %}
+            <span class="text-muted">-</span>
+          {% endif %}
+        </td>
+        <td>
+          <span class="text-muted" style="font-size: 0.875rem;">
+            {{ task.created_at.strftime('%Y-%m-%d %H:%M') }}
+          </span>
+        </td>
+        <td>
+          <a href="/admin/tasks/{{ task.id }}" class="btn btn-secondary" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;">
+            View
+          </a>
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="6" style="text-align: center; padding: var(--spacing-6);" class="text-muted">
+          No tasks found matching the current filters.
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if result.total_pages > 1 %}
+  {{ pagination(result.page, result.total_pages, "/admin/tasks", target="#task-list") }}
+{% endif %}

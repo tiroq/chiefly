@@ -1,0 +1,116 @@
+<div class="dashboard-header" style="margin-bottom: 2rem;">
+  <h1 style="font-size: 1.5rem; font-weight: 600; color: var(--color-text);">Dashboard</h1>
+</div>
+
+<div class="stats-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem; margin-bottom: 2rem;">
+  <div class="card">
+    <h3 style="font-size: 0.875rem; color: var(--color-text-muted); text-transform: uppercase; margin-bottom: 0.5rem;">Total Tasks</h3>
+    <div style="font-size: 2rem; font-weight: 600;">{{ stats.total_tasks }}</div>
+  </div>
+  <div class="card">
+    <h3 style="font-size: 0.875rem; color: var(--color-text-muted); text-transform: uppercase; margin-bottom: 0.5rem;">Tasks Today</h3>
+    <div style="font-size: 2rem; font-weight: 600;">{{ stats.tasks_today }}</div>
+  </div>
+  <div class="card">
+    <h3 style="font-size: 0.875rem; color: var(--color-text-muted); text-transform: uppercase; margin-bottom: 0.5rem;">Active Projects</h3>
+    <div style="font-size: 2rem; font-weight: 600;">{{ stats.active_projects }}</div>
+  </div>
+  <div class="card">
+    <h3 style="font-size: 0.875rem; color: var(--color-text-muted); text-transform: uppercase; margin-bottom: 0.5rem;">Errors (24h)</h3>
+    <div style="font-size: 2rem; font-weight: 600; {% if stats.error_count_24h > 0 %}color: var(--color-danger);{% endif %}">{{ stats.error_count_24h }}</div>
+  </div>
+</div>
+
+<div class="dashboard-content" style="display: grid; grid-template-columns: 2fr 1fr; gap: 1.5rem;">
+  <div class="recent-events">
+    <h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">Recent Events</h2>
+    <div class="card" style="padding: 0;">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Type</th>
+            <th>Severity</th>
+            <th>Subsystem</th>
+            <th>Message</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for event in stats.recent_events %}
+          <tr>
+            <td style="white-space: nowrap;">{{ event.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+            <td>{{ event.event_type }}</td>
+            <td>
+              <span class="badge {% if event.severity == 'error' %}badge-error{% elif event.severity == 'warning' %}badge-proposed{% else %}badge-completed{% endif %}">
+                {{ event.severity }}
+              </span>
+            </td>
+            <td>{{ event.subsystem }}</td>
+            <td>{{ event.message }}</td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="5" style="text-align: center; color: var(--color-text-muted);">No recent events</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="task-breakdown" style="display: flex; flex-direction: column; gap: 1.5rem;">
+    <div>
+      <h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">Tasks by Status</h2>
+      <div class="card" style="padding: 0;">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Status</th>
+              <th style="text-align: right;">Count</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for status, count in stats.tasks_by_status.items() %}
+            <tr>
+              <td>
+                <span class="badge badge-{{ status }}">{{ status }}</span>
+              </td>
+              <td style="text-align: right; font-weight: 500;">{{ count }}</td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="2" style="text-align: center; color: var(--color-text-muted);">No tasks</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div>
+      <h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem;">Tasks by Kind</h2>
+      <div class="card" style="padding: 0;">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Kind</th>
+              <th style="text-align: right;">Count</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for kind, count in stats.tasks_by_kind.items() %}
+            <tr>
+              <td style="text-transform: capitalize;">{{ kind }}</td>
+              <td style="text-align: right; font-weight: 500;">{{ count }}</td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="2" style="text-align: center; color: var(--color-text-muted);">No tasks</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>

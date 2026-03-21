@@ -1,0 +1,78 @@
+{% from "admin/macros/pagination.html" import pagination %}
+
+<div class="table-container" style="overflow-x: auto;">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Time</th>
+        <th>Type</th>
+        <th>Severity</th>
+        <th>Subsystem</th>
+        <th>Message</th>
+        <th>Task</th>
+        <th>Project</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in result.items %}
+      <tr>
+        <td style="white-space: nowrap;">{{ item.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+        <td><code>{{ item.event_type }}</code></td>
+        <td>
+          {% if item.severity == 'error' %}
+          <span class="badge badge-error">Error</span>
+          {% elif item.severity == 'warning' %}
+          <span class="badge badge-warning">Warning</span>
+          {% elif item.severity == 'info' %}
+          <span class="badge badge-info">Info</span>
+          {% else %}
+          <span class="badge">{{ item.severity }}</span>
+          {% endif %}
+        </td>
+        <td>{{ item.subsystem }}</td>
+        <td>{{ item.message }}</td>
+        <td>
+          {% if item.task_item_id %}
+          <a href="/admin/tasks/{{ item.task_item_id }}" class="btn btn-secondary" style="padding: 0.125rem 0.5rem; font-size: 0.75rem;">View Task</a>
+          {% else %}
+          <span class="text-muted">-</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if item.project_id %}
+          <a href="/admin/projects/{{ item.project_id }}" class="btn btn-secondary" style="padding: 0.125rem 0.5rem; font-size: 0.75rem;">View Project</a>
+          {% else %}
+          <span class="text-muted">-</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="7" style="text-align: center; padding: var(--spacing-6); color: var(--color-text-muted);">
+          No events found matching your filters.
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% set base_url = "/admin/events" %}
+{% set query_string = "" %}
+{% if request.query_params.get('severity') %}
+  {% set query_string = query_string ~ "&severity=" ~ request.query_params.get('severity') %}
+{% endif %}
+{% if request.query_params.get('event_type') %}
+  {% set query_string = query_string ~ "&event_type=" ~ request.query_params.get('event_type') %}
+{% endif %}
+{% if request.query_params.get('subsystem') %}
+  {% set query_string = query_string ~ "&subsystem=" ~ request.query_params.get('subsystem') %}
+{% endif %}
+
+{% if query_string %}
+  {% set base_url = base_url ~ "?" ~ query_string[1:] %}
+{% endif %}
+
+{% if result.total_pages > 1 %}
+  {{ pagination(result.page, result.total_pages, base_url, target="#event-list") }}
+{% endif %}

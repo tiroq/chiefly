@@ -1,0 +1,39 @@
+<form hx-post="/admin/projects/{{ result.project.id }}/prompts" 
+      hx-target="body" 
+      method="post"
+      style="display: flex; flex-direction: column; gap: 1rem;">
+  
+  <div>
+    <label for="title" style="display: block; margin-bottom: 0.25rem; font-weight: 500;">Title</label>
+    <input type="text" id="title" name="title" placeholder="e.g. Initial Version">
+  </div>
+  
+  <div>
+    <label for="description_text" style="display: block; margin-bottom: 0.25rem; font-weight: 500;">Description</label>
+    <textarea id="description_text" name="description_text" rows="2" placeholder="Project description for the LLM"></textarea>
+  </div>
+  
+  <div>
+    <label for="classification_prompt_text" style="display: block; margin-bottom: 0.25rem; font-weight: 500;">Classification Prompt</label>
+    <textarea id="classification_prompt_text" name="classification_prompt_text" rows="3" placeholder="Custom classification instructions"></textarea>
+  </div>
+  
+  <div>
+    <label for="routing_prompt_text" style="display: block; margin-bottom: 0.25rem; font-weight: 500;">Routing Prompt</label>
+    <textarea id="routing_prompt_text" name="routing_prompt_text" rows="3" placeholder="Custom routing instructions"></textarea>
+  </div>
+  
+  <div>
+    <label for="examples_json" style="display: block; margin-bottom: 0.25rem; font-weight: 500;">Examples (JSON)</label>
+    <textarea id="examples_json" name="examples_json" rows="3" placeholder='[{"input": "...", "output": "..."}]' style="font-family: monospace;"></textarea>
+  </div>
+  
+  <div>
+    <label for="change_note" style="display: block; margin-bottom: 0.25rem; font-weight: 500;">Change Note</label>
+    <input type="text" id="change_note" name="change_note" placeholder="What changed in this version?">
+  </div>
+  
+  <div style="margin-top: 0.5rem;">
+    <button type="submit" class="btn btn-primary">Create Version</button>
+  </div>
+</form>

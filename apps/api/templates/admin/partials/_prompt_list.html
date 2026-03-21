@@ -1,0 +1,45 @@
+{% if versions %}
+<div style="overflow-x: auto;">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Version #</th>
+        <th>Title</th>
+        <th>Active</th>
+        <th>Created</th>
+        <th>Change Note</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for version in versions %}
+      <tr>
+        <td>{{ version.version_no }}</td>
+        <td>{{ version.title or '-' }}</td>
+        <td>
+          {% if version.is_active %}
+          <span class="badge badge-success" style="background-color: #dcfce7; color: #166534;">Active</span>
+          {% else %}
+          <span class="badge badge-secondary" style="background-color: #f1f5f9; color: #64748b;">Inactive</span>
+          {% endif %}
+        </td>
+        <td>{{ version.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+        <td>{{ version.change_note or '-' }}</td>
+        <td>
+          {% if not version.is_active %}
+          <form hx-post="/admin/projects/{{ result.project.id }}/prompts/{{ version.id }}/activate" 
+                hx-target="body" 
+                method="post" 
+                style="display: inline;">
+            <button type="submit" class="btn btn-primary" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;">Activate</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="text-muted">No prompt versions found.</p>
+{% endif %}

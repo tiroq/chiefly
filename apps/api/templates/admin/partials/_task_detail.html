@@ -1,0 +1,161 @@
+<div class="card" style="margin-bottom: var(--spacing-6);">
+  <div class="flex" style="justify-content: space-between; align-items: flex-start; margin-bottom: var(--spacing-4);">
+    <div>
+      <h1 style="font-size: 1.5rem; font-weight: 600; margin-bottom: var(--spacing-2);">
+        {{ result.task.normalized_title or "Untitled Task" }}
+      </h1>
+      <div class="flex gap-2" style="align-items: center; flex-wrap: wrap;">
+        <span class="badge badge-{{ result.task.status.lower() if result.task.status else 'new' }}">
+          {{ result.task.status }}
+        </span>
+        {% if result.task.kind %}
+        <span class="badge badge-{{ result.task.kind.lower() }}">
+          {{ result.task.kind }}
+        </span>
+        {% endif %}
+        {% if result.task.project_id %}
+        <span class="badge" style="background-color: var(--color-background); color: var(--color-text-muted); border: 1px solid var(--color-border);">
+          Project: {{ project.name if project else result.task.project_id }}
+        </span>
+        {% endif %}
+        {% if result.task.confidence_band %}
+        <span class="badge" style="background-color: var(--color-background); color: var(--color-text-muted); border: 1px solid var(--color-border);">
+          Confidence: {{ result.task.confidence_band }}
+        </span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="flex gap-2">
+      {% if result.task.status == "error" %}
+      <button class="btn btn-primary"
+              hx-post="/admin/api/tasks/{{ result.task.id }}/retry"
+              hx-swap="none">
+        Retry
+      </button>
+      {% endif %}
+      <button class="btn btn-secondary"
+              hx-post="/admin/api/tasks/{{ result.task.id }}/reclassify"
+              hx-swap="none">
+        Re-classify
+      </button>
+      <button class="btn btn-secondary"
+              hx-post="/admin/api/tasks/{{ result.task.id }}/resend"
+              hx-swap="none">
+        Re-send Proposal
+      </button>
+    </div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--spacing-6); margin-bottom: var(--spacing-6);">
+    <div>
+      <h3 style="font-size: 0.875rem; font-weight: 600; color: var(--color-text-muted); text-transform: uppercase; margin-bottom: var(--spacing-2);">
+        Metadata
+      </h3>
+      <table class="table" style="box-shadow: none; border: 1px solid var(--color-border);">
+        <tbody>
+          <tr>
+            <th style="width: 120px; background: none;">Created</th>
+            <td>{{ result.task.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+          </tr>
+          <tr>
+            <th style="background: none;">Updated</th>
+            <td>{{ result.task.updated_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+          </tr>
+          <tr>
+            <th style="background: none;">ID</th>
+            <td><code style="font-size: 0.75rem;">{{ result.task.id }}</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div>
+      <h3 style="font-size: 0.875rem; font-weight: 600; color: var(--color-text-muted); text-transform: uppercase; margin-bottom: var(--spacing-2);">
+        Raw Text
+      </h3>
+      <pre style="background-color: var(--color-background); padding: var(--spacing-3); border-radius: 4px; border: 1px solid var(--color-border); font-family: var(--font-mono); font-size: 0.875rem; white-space: pre-wrap; word-break: break-word;">{{ result.task.raw_text }}</pre>
+    </div>
+  </div>
+
+  {% if result.task.next_action %}
+  <div style="margin-bottom: var(--spacing-6);">
+    <h3 style="font-size: 0.875rem; font-weight: 600; color: var(--color-text-muted); text-transform: uppercase; margin-bottom: var(--spacing-2);">
+      Next Action
+    </h3>
+    <div style="background-color: var(--color-background); padding: var(--spacing-3); border-radius: 4px; border: 1px solid var(--color-border);">
+      {{ result.task.next_action }}
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: var(--spacing-4);">Revision Timeline</h2>
+  
+  {% if result.revisions %}
+  <div style="display: flex; flex-direction: column; gap: var(--spacing-4);">
+    {% for rev in result.revisions|sort(attribute='revision_no', reverse=True) %}
+    <div style="border: 1px solid var(--color-border); border-radius: 4px; overflow: hidden;">
+      <div style="background-color: var(--color-background); padding: var(--spacing-3) var(--spacing-4); border-bottom: 1px solid var(--color-border); display: flex; justify-content: space-between; align-items: center;">
+        <div style="font-weight: 600;">
+          Revision #{{ rev.revision_no }}
+        </div>
+        <div class="text-muted" style="font-size: 0.875rem;">
+          {{ rev.created_at.strftime('%Y-%m-%d %H:%M:%S') }}
+        </div>
+      </div>
+      <div style="padding: var(--spacing-4);">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--spacing-4);">
+          <div>
+            <h4 style="font-size: 0.75rem; font-weight: 600; color: var(--color-text-muted); text-transform: uppercase; margin-bottom: var(--spacing-2);">
+              LLM Proposal
+            </h4>
+            <pre style="background-color: var(--color-background); padding: var(--spacing-3); border-radius: 4px; border: 1px solid var(--color-border); font-family: var(--font-mono); font-size: 0.75rem; white-space: pre-wrap; word-break: break-word; max-height: 300px; overflow-y: auto;">{{ rev.proposal_json | tojson(indent=2) }}</pre>
+          </div>
+          <div>
+            <h4 style="font-size: 0.75rem; font-weight: 600; color: var(--color-text-muted); text-transform: uppercase; margin-bottom: var(--spacing-2);">
+              User Decision
+            </h4>
+            {% if rev.user_decision %}
+            <div style="margin-bottom: var(--spacing-3);">
+              <span class="badge" style="background-color: var(--color-primary); color: white;">
+                {{ rev.user_decision }}
+              </span>
+            </div>
+            {% if rev.user_notes %}
+            <div style="font-size: 0.875rem; margin-bottom: var(--spacing-3);">
+              <strong>Notes:</strong> {{ rev.user_notes }}
+            </div>
+            {% endif %}
+            <table class="table" style="box-shadow: none; border: 1px solid var(--color-border); font-size: 0.875rem;">
+              <tbody>
+                <tr>
+                  <th style="width: 100px; background: none; padding: var(--spacing-2);">Final Title</th>
+                  <td style="padding: var(--spacing-2);">{{ rev.final_title or '-' }}</td>
+                </tr>
+                <tr>
+                  <th style="background: none; padding: var(--spacing-2);">Final Kind</th>
+                  <td style="padding: var(--spacing-2);">{{ rev.final_kind or '-' }}</td>
+                </tr>
+                <tr>
+                  <th style="background: none; padding: var(--spacing-2);">Final Project</th>
+                  <td style="padding: var(--spacing-2);">{{ rev.final_project_id or '-' }}</td>
+                </tr>
+              </tbody>
+            </table>
+            {% else %}
+            <div class="text-muted" style="font-style: italic; font-size: 0.875rem;">
+              Pending user decision...
+            </div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="text-muted" style="text-align: center; padding: var(--spacing-6);">
+    No revisions found for this task.
+  </div>
+  {% endif %}
+</div>
