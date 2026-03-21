@@ -1,9 +1,9 @@
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.domain.enums import TaskStatus
+from core.domain.enums import TaskKind, TaskStatus
 from db.models.task_item import TaskItem
 
 
@@ -47,3 +47,55 @@ class TaskItemRepository:
         self._session.add(task)
         await self._session.flush()
         return task
+
+    async def list_tasks_filtered(
+        self,
+        status: TaskStatus | None = None,
+        kind: TaskKind | None = None,
+        project_id: uuid.UUID | None = None,
+        search: str | None = None,
+        limit: int = 25,
+        offset: int = 0,
+    ) -> list[TaskItem]:
+        stmt = select(TaskItem).order_by(TaskItem.created_at.desc())
+        if status is not None:
+            stmt = stmt.where(TaskItem.status == status)
+        if kind is not None:
+            stmt = stmt.where(TaskItem.kind == kind)
+        if project_id is not None:
+            stmt = stmt.where(TaskItem.project_id == project_id)
+        if search is not None:
+            term = f"%{search}%"
+            stmt = stmt.where(
+                or_(
+                    TaskItem.raw_text.ilike(term),
+                    TaskItem.normalized_title.ilike(term),
+                )
+            )
+        result = await self._session.execute(stmt.limit(limit).offset(offset))
+        return list(result.scalars().all())
+
+    async def count_tasks_filtered(
+        self,
+        status: TaskStatus | None = None,
+        kind: TaskKind | None = None,
+        project_id: uuid.UUID | None = None,
+        search: str | None = None,
+    ) -> int:
+        stmt = select(func.count()).select_from(TaskItem)
+        if status is not None:
+            stmt = stmt.where(TaskItem.status == status)
+        if kind is not None:
+            stmt = stmt.where(TaskItem.kind == kind)
+        if project_id is not None:
+            stmt = stmt.where(TaskItem.project_id == project_id)
+        if search is not None:
+            term = f"%{search}%"
+            stmt = stmt.where(
+                or_(
+                    TaskItem.raw_text.ilike(term),
+                    TaskItem.normalized_title.ilike(term),
+                )
+            )
+        result = await self._session.execute(stmt)
+        return result.scalar_one()
