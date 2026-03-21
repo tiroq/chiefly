@@ -5,12 +5,10 @@ LLM classification service with provider abstraction.
 from __future__ import annotations
 
 import json
-
-import anyio
+import asyncio
 
 from apps.api.logging import get_logger
 from core.domain.enums import ConfidenceBand, TaskKind
-from core.domain.exceptions import LLMError
 from core.schemas.llm import TaskClassificationResult
 
 logger = get_logger(__name__)
@@ -85,7 +83,7 @@ class LLMService:
         return OpenAI(api_key=self._api_key)
 
     def _call_llm_sync(self, prompt: str) -> str:
-        """Synchronous LLM call — always run via anyio.to_thread.run_sync."""
+        """Synchronous LLM call — always run via asyncio.to_thread."""
         client = self._get_client()
         response = client.chat.completions.create(
             model=self._model,
@@ -96,21 +94,24 @@ class LLMService:
         return response.choices[0].message.content or ""
 
     async def classify_task(
-        self, raw_text: str, project_candidates: list[str]
+        self,
+        raw_text: str,
+        project_candidates: list[str],
+        custom_instructions: str | None = None,
     ) -> TaskClassificationResult:
         """Classify raw task text using LLM.  Non-blocking — runs the sync
-        OpenAI call in a thread pool via anyio.to_thread.run_sync."""
+        OpenAI call in a thread pool via asyncio.to_thread."""
         projects_str = ", ".join(project_candidates) if project_candidates else "Personal"
         prompt = _CLASSIFY_PROMPT_TEMPLATE.format(
             raw_text=raw_text,
             projects=projects_str,
         )
+        if custom_instructions:
+            prompt += f"\n\nProject-specific instructions:\n{custom_instructions}"
 
         for attempt in range(2):
             try:
-                raw_response = await anyio.to_thread.run_sync(
-                    self._call_llm_sync, prompt
-                )
+                raw_response = await asyncio.to_thread(self._call_llm_sync, prompt)
                 # Strip markdown code fences if present
                 raw_response = raw_response.strip()
                 if raw_response.startswith("```"):
@@ -139,7 +140,7 @@ class LLMService:
         logger.info("llm_classification_fallback", raw_text=raw_text[:100])
         return _fallback_classification(raw_text)
 
-    def generate_daily_review(self, context_payload: dict) -> str:
+    def generate_daily_review(self, context_payload: dict[str, list[dict[str, str]]]) -> str:
         lines = ["Here is the daily task summary:"]
         if context_payload.get("active_tasks"):
             lines.append(f"\nActive tasks ({len(context_payload['active_tasks'])}):")
