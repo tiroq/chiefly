@@ -108,7 +108,7 @@ class TestClassificationService:
         assert project is None
 
     @pytest.mark.asyncio
-    async def test_classify_passes_project_names_to_llm(self, projects):
+    async def test_classify_passes_project_context_to_llm(self, projects):
         mock_llm = AsyncMock(spec=LLMService)
         mock_llm.classify_task.return_value = TaskClassificationResult(
             kind=TaskKind.TASK,
@@ -120,7 +120,8 @@ class TestClassificationService:
 
         await svc.classify("test text", projects)
         call_args = mock_llm.classify_task.call_args
-        project_names = call_args[0][1]  # second positional arg
-        assert "NFT Gateway" in project_names
-        assert "Personal" in project_names
-        assert "Family" in project_names
+        project_context = call_args[0][1]  # second positional arg
+        assert "Available projects:" in project_context
+        assert "NFT Gateway" in project_context
+        assert "Personal" in project_context
+        assert "Family" in project_context

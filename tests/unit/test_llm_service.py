@@ -25,13 +25,15 @@ class TestLLMServiceClassify:
     @pytest.mark.asyncio
     async def test_valid_json_response(self):
         svc = self._make_service()
-        valid_json = json.dumps({
-            "kind": "task",
-            "normalized_title": "Buy groceries",
-            "confidence": "high",
-        })
+        valid_json = json.dumps(
+            {
+                "kind": "task",
+                "normalized_title": "Buy groceries",
+                "confidence": "high",
+            }
+        )
         with patch.object(svc, "_call_llm_sync", return_value=valid_json):
-            result = await svc.classify_task("buy groceries", ["Personal"])
+            result = await svc.classify_task("buy groceries", "Available projects:\n- Personal")
         assert result.kind == TaskKind.TASK
         assert result.normalized_title == "Buy groceries"
 
@@ -40,14 +42,14 @@ class TestLLMServiceClassify:
         svc = self._make_service()
         response = '```json\n{"kind": "waiting", "normalized_title": "Wait for reply"}\n```'
         with patch.object(svc, "_call_llm_sync", return_value=response):
-            result = await svc.classify_task("wait for reply", ["Personal"])
+            result = await svc.classify_task("wait for reply", "Available projects:\n- Personal")
         assert result.kind == TaskKind.WAITING
 
     @pytest.mark.asyncio
     async def test_invalid_json_falls_back(self):
         svc = self._make_service()
         with patch.object(svc, "_call_llm_sync", return_value="not valid json at all"):
-            result = await svc.classify_task("buy groceries", ["Personal"])
+            result = await svc.classify_task("buy groceries", "Available projects:\n- Personal")
         # Should fall back to heuristic classification
         assert result.kind == TaskKind.TASK
         assert result.confidence == ConfidenceBand.LOW
@@ -56,7 +58,7 @@ class TestLLMServiceClassify:
     async def test_exception_falls_back(self):
         svc = self._make_service()
         with patch.object(svc, "_call_llm_sync", side_effect=Exception("API down")):
-            result = await svc.classify_task("buy groceries", ["Personal"])
+            result = await svc.classify_task("buy groceries", "Available projects:\n- Personal")
         assert result.kind == TaskKind.TASK
         assert result.confidence == ConfidenceBand.LOW
 
@@ -71,7 +73,7 @@ class TestLLMServiceClassify:
             raise Exception("oops")
 
         with patch.object(svc, "_call_llm_sync", side_effect=failing_llm):
-            result = await svc.classify_task("some task", [])
+            result = await svc.classify_task("some task", "Available projects:\n- Personal")
         assert call_count == 2  # 2 attempts (0 and 1)
         assert result.confidence == ConfidenceBand.LOW
 
@@ -85,14 +87,16 @@ class TestLLMServiceClassify:
             call_count += 1
             if call_count == 1:
                 raise Exception("first fail")
-            return json.dumps({
-                "kind": "idea",
-                "normalized_title": "New concept",
-                "confidence": "medium",
-            })
+            return json.dumps(
+                {
+                    "kind": "idea",
+                    "normalized_title": "New concept",
+                    "confidence": "medium",
+                }
+            )
 
         with patch.object(svc, "_call_llm_sync", side_effect=flaky_llm):
-            result = await svc.classify_task("new concept", [])
+            result = await svc.classify_task("new concept", "Available projects:\n- Personal")
         assert result.kind == TaskKind.IDEA
         assert call_count == 2
 
@@ -102,7 +106,7 @@ class TestLLMServiceClassify:
         # Valid JSON but missing optional fields
         response = json.dumps({"kind": "reference", "normalized_title": "API docs"})
         with patch.object(svc, "_call_llm_sync", return_value=response):
-            result = await svc.classify_task("API documentation", [])
+            result = await svc.classify_task("API documentation", "Available projects:\n- Personal")
         assert result.kind == TaskKind.REFERENCE
         assert result.substeps == []
         assert result.ambiguities == []
@@ -114,7 +118,7 @@ class TestLLMServiceClassify:
         # Valid JSON but wrong schema (missing required 'kind')
         response = json.dumps({"title": "something", "type": "task"})
         with patch.object(svc, "_call_llm_sync", return_value=response):
-            result = await svc.classify_task("something", [])
+            result = await svc.classify_task("something", "Available projects:\n- Personal")
         assert result.confidence == ConfidenceBand.LOW
 
 

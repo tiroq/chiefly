@@ -212,9 +212,7 @@ class TestE2EDiscardPath:
     """FLOW 2: proposed item -> discard -> marked DISCARDED."""
 
     @pytest.mark.asyncio
-    async def test_intake_then_discard(
-        self, seeded_session, google_task, classification_result
-    ):
+    async def test_intake_then_discard(self, seeded_session, google_task, classification_result):
         from apps.api.services.classification_service import ClassificationService
         from apps.api.services.google_tasks_service import GoogleTasksService
         from apps.api.services.intake_service import IntakeService
@@ -297,9 +295,7 @@ class TestE2EEditThenConfirm:
     """FLOW 3: propose -> edit title -> confirm with edited title."""
 
     @pytest.mark.asyncio
-    async def test_edit_then_confirm(
-        self, seeded_session, google_task, classification_result
-    ):
+    async def test_edit_then_confirm(self, seeded_session, google_task, classification_result):
         from apps.api.services.classification_service import ClassificationService
         from apps.api.services.google_tasks_service import GoogleTasksService
         from apps.api.services.intake_service import IntakeService
@@ -475,7 +471,13 @@ class TestE2EMultipleInboxItems:
         from db.repositories.task_item_repo import TaskItemRepository
 
         tasks = [
-            GoogleTask(id=f"gt-{i}", title=f"Task {i}", notes=None, status="needsAction", tasklist_id="inbox")
+            GoogleTask(
+                id=f"gt-{i}",
+                title=f"Task {i}",
+                notes=None,
+                status="needsAction",
+                tasklist_id="inbox",
+            )
             for i in range(3)
         ]
         mock_google = MagicMock(spec=GoogleTasksService)
@@ -501,7 +503,9 @@ class TestE2EMultipleInboxItems:
             count = await intake.poll_and_process()
 
         assert count == 3
-        assert mock_tg.send_proposal.call_count == 3
+        # With the review queue, only the first item is sent to Telegram immediately;
+        # the remaining items stay queued until the active review is resolved.
+        assert mock_tg.send_proposal.call_count == 1
         assert mock_llm.classify_task.call_count == 3
 
         task_repo = TaskItemRepository(seeded_session)

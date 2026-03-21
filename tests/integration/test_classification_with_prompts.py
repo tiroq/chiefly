@@ -69,11 +69,11 @@ class TestClassificationWithPrompts:
 
         _, project = await svc.classify("deploy nft contract", projects)
 
-        mock_alias_repo.get_all_aliases_map.assert_awaited_once()
+        assert mock_alias_repo.get_all_aliases_map.await_count == 2
         assert project is not None
         assert project.slug == "nft-gateway"
 
-    async def test_no_active_prompts_uses_project_names_only(
+    async def test_no_active_prompts_uses_project_context(
         self,
         projects: list[Project],
         llm_result: TaskClassificationResult,
@@ -91,12 +91,14 @@ class TestClassificationWithPrompts:
 
         await svc.classify("deploy nft contract", projects)
 
-        mock_repo.get_all_active.assert_awaited_once()
-        mock_llm.classify_task.assert_awaited_once_with(
-            "deploy nft contract",
-            ["NFT Gateway", "Personal"],
-            custom_instructions=None,
-        )
+        assert mock_repo.get_all_active.await_count == 2
+        mock_llm.classify_task.assert_awaited_once()
+        call = mock_llm.classify_task.await_args_list[0]
+        assert call.args[0] == "deploy nft contract"
+        assert "Available projects:" in call.args[1]
+        assert "NFT Gateway" in call.args[1]
+        assert "Personal" in call.args[1]
+        assert call.kwargs == {"custom_instructions": None}
 
     async def test_active_prompt_for_matched_project_injects_custom_instructions(
         self,
@@ -121,7 +123,7 @@ class TestClassificationWithPrompts:
 
         await svc.classify("deploy nft contract", projects)
 
-        mock_repo.get_all_active.assert_awaited_once()
+        assert mock_repo.get_all_active.await_count == 2
         assert mock_llm.classify_task.await_count == 2
         first_call = mock_llm.classify_task.await_args_list[0]
         second_call = mock_llm.classify_task.await_args_list[1]
@@ -130,7 +132,7 @@ class TestClassificationWithPrompts:
             "custom_instructions": "Prefer blockchain-specific wording and deployment checks.",
         }
 
-    async def test_active_prompts_for_other_projects_falls_back_to_name_only(
+    async def test_active_prompts_for_other_projects_uses_single_pass_context(
         self,
         projects: list[Project],
         llm_result: TaskClassificationResult,
@@ -153,9 +155,11 @@ class TestClassificationWithPrompts:
 
         await svc.classify("deploy nft contract", projects)
 
-        mock_repo.get_all_active.assert_awaited_once()
-        mock_llm.classify_task.assert_awaited_once_with(
-            "deploy nft contract",
-            ["NFT Gateway", "Personal"],
-            custom_instructions=None,
-        )
+        assert mock_repo.get_all_active.await_count == 2
+        mock_llm.classify_task.assert_awaited_once()
+        call = mock_llm.classify_task.await_args_list[0]
+        assert call.args[0] == "deploy nft contract"
+        assert "Available projects:" in call.args[1]
+        assert "NFT Gateway" in call.args[1]
+        assert "Personal" in call.args[1]
+        assert call.kwargs == {"custom_instructions": None}
