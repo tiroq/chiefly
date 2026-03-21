@@ -88,6 +88,42 @@
   {% endif %}
 </div>
 
+<div class="card" style="margin-top: var(--spacing-4); margin-bottom: var(--spacing-4);">
+  <h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: var(--spacing-4);">Edit Task</h2>
+  <form hx-post="/admin/api/tasks/{{ result.task.id }}/edit"
+        hx-swap="none"
+        style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--spacing-4);">
+    <div>
+      <label style="display: block; font-size: 0.875rem; font-weight: 600; margin-bottom: var(--spacing-1);">Normalized Title</label>
+      <input type="text" name="normalized_title"
+             value="{{ result.task.normalized_title or '' }}"
+             placeholder="e.g. Buy groceries"
+             style="width: 100%; padding: var(--spacing-2); border: 1px solid var(--color-border); border-radius: 4px; font-size: 0.875rem;">
+    </div>
+    <div>
+      <label style="display: block; font-size: 0.875rem; font-weight: 600; margin-bottom: var(--spacing-1);">Kind</label>
+      <select name="kind" style="width: 100%; padding: var(--spacing-2); border: 1px solid var(--color-border); border-radius: 4px; font-size: 0.875rem;">
+        <option value="">— None —</option>
+        {% for k in kinds %}
+        <option value="{{ k }}" {% if result.task.kind == k %}selected{% endif %}>{{ k | title }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label style="display: block; font-size: 0.875rem; font-weight: 600; margin-bottom: var(--spacing-1);">Project</label>
+      <select name="project_id" style="width: 100%; padding: var(--spacing-2); border: 1px solid var(--color-border); border-radius: 4px; font-size: 0.875rem;">
+        <option value="">— None —</option>
+        {% for p in projects %}
+        <option value="{{ p.id }}" {% if result.task.project_id == p.id %}selected{% endif %}>{{ p.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div style="display: flex; align-items: flex-end;">
+      <button type="submit" class="btn btn-primary">Save Changes</button>
+    </div>
+  </form>
+</div>
+
 <div class="card">
   <h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: var(--spacing-4);">Revision Timeline</h2>
   

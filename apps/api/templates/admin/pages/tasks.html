@@ -6,6 +6,11 @@
 <div class="card">
   <div class="flex" style="justify-content: space-between; align-items: center; margin-bottom: var(--spacing-4);">
     <h1 style="font-size: 1.5rem; font-weight: 600;">Tasks</h1>
+    <button class="btn btn-primary"
+            hx-post="/admin/api/tasks/import-from-google"
+            hx-swap="none">
+      Import from Google
+    </button>
   </div>
 
   <form id="task-filters" class="flex gap-2" style="margin-bottom: var(--spacing-4); flex-wrap: wrap;"

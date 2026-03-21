@@ -30,6 +30,7 @@
         <th>Active</th>
         <th>Task Count</th>
         <th>Alias Count</th>
+        <th>Active Prompt</th>
         <th>Actions</th>
       </tr>
     </thead>
@@ -49,12 +50,36 @@
         <td>{{ item.task_count }}</td>
         <td>{{ item.alias_count }}</td>
         <td>
+          {% if item.active_prompt_version %}
+            <div style="display: flex; flex-direction: column; gap: 0.25rem;">
+              <span style="font-weight: 500; font-size: 0.875rem;">v{{ item.active_prompt_version.version_no }}</span>
+              {% if item.active_prompt_version.title %}
+                <span style="font-size: 0.8rem; color: var(--color-text-muted);">{{ item.active_prompt_version.title }}</span>
+              {% else %}
+                <span style="font-size: 0.8rem; color: var(--color-text-muted); font-style: italic;">No title</span>
+              {% endif %}
+            </div>
+          {% else %}
+            <span style="color: var(--color-text-muted); font-style: italic;">No prompt version</span>
+          {% endif %}
+        </td>
+        <td style="display: flex; gap: 0.25rem; flex-wrap: wrap;">
           <a href="/admin/projects/{{ item.project.id }}" class="btn btn-secondary" style="padding: 0.125rem 0.5rem; font-size: 0.75rem;">View</a>
+          {% if item.active_prompt_version %}
+            <button hx-get="/admin/projects/{{ item.project.id }}/prompts/{{ item.active_prompt_version.id }}" 
+                    hx-target="body" 
+                    hx-swap="beforeend"
+                    class="btn btn-info"
+                    style="padding: 0.125rem 0.5rem; font-size: 0.75rem; background-color: #93c5fd; border: 1px solid #60a5fa;"
+                    title="View full prompt details">
+              Prompt
+            </button>
+          {% endif %}
         </td>
       </tr>
       {% else %}
       <tr>
-        <td colspan="7" style="text-align: center; padding: var(--spacing-6); color: var(--color-text-muted);">
+        <td colspan="8" style="text-align: center; padding: var(--spacing-6); color: var(--color-text-muted);">
           No projects found.
         </td>
       </tr>
