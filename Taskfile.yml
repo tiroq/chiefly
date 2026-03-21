@@ -19,26 +19,31 @@ tasks:
 
   test:
     desc: Run all tests
+    aliases: [t]
     cmds:
       - .venv/bin/pytest tests/ -v
 
   test:unit:
     desc: Run unit tests
+    aliases: [tu]
     cmds:
       - .venv/bin/pytest tests/unit/ -v
 
   test:integration:
     desc: Run integration tests
+    aliases: [ti]
     cmds:
       - .venv/bin/pytest tests/integration/ -v
 
   lint:
     desc: Run ruff linter
+    aliases: [l]
     cmds:
       - .venv/bin/ruff check .
 
   migrate:
     desc: Apply all pending migrations
+    aliases: [m]
     cmds:
       - .venv/bin/alembic upgrade head
 
@@ -56,15 +61,39 @@ tasks:
 
   docker:up:
     desc: Start Docker services in the background
+    aliases: [up]
     cmds:
       - docker compose -f infra/docker/docker-compose.yml up -d
 
   docker:down:
     desc: Stop Docker services
+    aliases: [down]
     cmds:
       - docker compose -f infra/docker/docker-compose.yml down
 
   docker:logs:
     desc: Tail Docker service logs
+    aliases: [logs]
     cmds:
       - docker compose -f infra/docker/docker-compose.yml logs -f
+
+  docker:tail:
+    desc: Tail last 50 lines then follow Docker service logs
+    aliases: [tail]
+    cmds:
+      - docker compose -f infra/docker/docker-compose.yml logs --tail=50 -f
+
+  docker:rebuild:
+    desc: Rebuild API image and restart the service (keeps DB & data)
+    aliases: [rebuild]
+    cmds:
+      - docker compose -f infra/docker/docker-compose.yml build api migrate
+      - docker compose -f infra/docker/docker-compose.yml up -d --force-recreate api
+
+  docker:rebuild-scratch:
+    desc: Full teardown, rebuild from scratch, and bring everything back up
+    aliases: [scratch]
+    cmds:
+      - docker compose -f infra/docker/docker-compose.yml down -v
+      - docker compose -f infra/docker/docker-compose.yml build --no-cache
+      - docker compose -f infra/docker/docker-compose.yml up -d
