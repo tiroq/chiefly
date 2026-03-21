@@ -14,6 +14,8 @@ from apps.api.services.admin_dashboard_service import AdminDashboardService
 from apps.api.services.admin_logs_service import AdminLogsService
 from apps.api.services.admin_projects_service import AdminProjectsService
 from apps.api.services.admin_tasks_service import AdminTasksService
+from apps.api.services.google_tasks_service import GoogleTasksService
+from apps.api.services.project_sync_service import ProjectSyncService
 from apps.api.services.prompt_versioning_service import PromptVersioningService
 from apps.api.services.system_event_service import SystemEventService
 from db.models.project_alias import ProjectAlias
@@ -50,6 +52,8 @@ async def admin_dashboard(
     if is_htmx(request):
         return templates.TemplateResponse("admin/partials/_dashboard.html", context)
     return templates.TemplateResponse("admin/pages/dashboard.html", context)
+
+
 @router.get("/projects")
 async def admin_projects(
     request: Request,
@@ -58,18 +62,49 @@ async def admin_projects(
     project_repo = ProjectRepository(session)
     alias_repo = ProjectAliasRepo(session)
     svc = AdminProjectsService(project_repo, alias_repo)
-    
+
     result = await svc.list_projects(session)
-    
+
     context = {
         "request": request,
         "result": result,
         "title": "Projects",
     }
-    
+
     if is_htmx(request):
         return templates.TemplateResponse("admin/partials/_project_table.html", context)
     return templates.TemplateResponse("admin/pages/projects.html", context)
+
+
+@router.post("/projects/sync")
+async def sync_projects(
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+):
+    settings_val = get_settings()
+    google_tasks = GoogleTasksService(settings_val.google_credentials_file)
+    project_repo = ProjectRepository(session)
+    sync_svc = ProjectSyncService(google_tasks, project_repo)
+
+    result = await sync_svc.sync_from_google(
+        session,
+        inbox_list_id=settings_val.google_tasks_inbox_list_id,
+    )
+
+    alias_repo = ProjectAliasRepo(session)
+    projects_svc = AdminProjectsService(project_repo, alias_repo)
+    project_result = await projects_svc.list_projects(session)
+
+    context = {
+        "request": request,
+        "result": project_result,
+        "sync_result": result,
+        "title": "Projects",
+    }
+
+    if is_htmx(request):
+        return templates.TemplateResponse("admin/partials/_project_table.html", context)
+    return RedirectResponse("/admin/projects?msg=Sync+complete", status_code=303)
 
 
 @router.get("/events")
@@ -83,26 +118,23 @@ async def admin_events(
 ):
     event_repo = SystemEventRepo(session)
     svc = AdminLogsService(event_repo)
-    
+
     result = await svc.list_events(
-        session, 
-        event_type=event_type, 
-        severity=severity, 
-        subsystem=subsystem, 
-        page=page
+        session, event_type=event_type, severity=severity, subsystem=subsystem, page=page
     )
     severity_summary = await svc.get_severity_summary(session)
-    
+
     context = {
         "request": request,
         "result": result,
         "severity_summary": severity_summary,
         "title": "Events",
     }
-    
+
     if is_htmx(request):
         return templates.TemplateResponse("admin/partials/_event_table.html", context)
     return templates.TemplateResponse("admin/pages/events.html", context)
+
 
 @router.get("/tasks")
 async def admin_tasks_list(
@@ -197,6 +229,7 @@ async def admin_task_detail(
         return templates.TemplateResponse("admin/partials/_task_detail.html", context)
     return templates.TemplateResponse("admin/pages/task_detail.html", context)
 
+
 @router.get("/projects/{project_id}")
 async def project_detail(
     request: Request,
@@ -268,8 +301,13 @@ async def create_prompt_version(
     await session.commit()
 
     if is_htmx(request):
-        return Response(status_code=200, headers={"HX-Redirect": f"/admin/projects/{project_id}?msg=Prompt+version+created"})
-    return RedirectResponse(f"/admin/projects/{project_id}?msg=Prompt+version+created", status_code=303)
+        return Response(
+            status_code=200,
+            headers={"HX-Redirect": f"/admin/projects/{project_id}?msg=Prompt+version+created"},
+        )
+    return RedirectResponse(
+        f"/admin/projects/{project_id}?msg=Prompt+version+created", status_code=303
+    )
 
 
 @router.post("/projects/{project_id}/prompts/{version_id}/activate")
@@ -291,8 +329,13 @@ async def activate_prompt_version(
     await session.commit()
 
     if is_htmx(request):
-        return Response(status_code=200, headers={"HX-Redirect": f"/admin/projects/{project_id}?msg=Prompt+version+activated"})
-    return RedirectResponse(f"/admin/projects/{project_id}?msg=Prompt+version+activated", status_code=303)
+        return Response(
+            status_code=200,
+            headers={"HX-Redirect": f"/admin/projects/{project_id}?msg=Prompt+version+activated"},
+        )
+    return RedirectResponse(
+        f"/admin/projects/{project_id}?msg=Prompt+version+activated", status_code=303
+    )
 
 
 @router.post("/projects/{project_id}/aliases")
@@ -319,7 +362,10 @@ async def add_project_alias(
     await session.commit()
 
     if is_htmx(request):
-        return Response(status_code=200, headers={"HX-Redirect": f"/admin/projects/{project_id}?msg=Alias+added"})
+        return Response(
+            status_code=200,
+            headers={"HX-Redirect": f"/admin/projects/{project_id}?msg=Alias+added"},
+        )
     return RedirectResponse(f"/admin/projects/{project_id}?msg=Alias+added", status_code=303)
 
 
@@ -346,5 +392,88 @@ async def delete_project_alias(
     await session.commit()
 
     if is_htmx(request):
-        return Response(status_code=200, headers={"HX-Redirect": f"/admin/projects/{project_id}?msg=Alias+deleted"})
+        return Response(
+            status_code=200,
+            headers={"HX-Redirect": f"/admin/projects/{project_id}?msg=Alias+deleted"},
+        )
     return RedirectResponse(f"/admin/projects/{project_id}?msg=Alias+deleted", status_code=303)
+
+
+@router.post("/projects/{project_id}/generate-description")
+async def generate_project_description(
+    request: Request,
+    project_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+):
+    from apps.api.services.llm_service import LLMService
+    from apps.api.services.prompt_versioning_service import PromptVersioningService
+
+    settings_val = get_settings()
+    project_repo = ProjectRepository(session)
+    project = await project_repo.get_by_id(project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    google_tasks = GoogleTasksService(settings_val.google_credentials_file)
+    gtasks = google_tasks.list_tasks(project.google_tasklist_id)
+    sample_titles = [t.title for t in gtasks[:20] if t.title]
+
+    if not sample_titles:
+        if is_htmx(request):
+            return Response(
+                status_code=200,
+                headers={
+                    "HX-Redirect": f"/admin/projects/{project_id}?msg=No+tasks+found+in+project+list"
+                },
+            )
+        return RedirectResponse(f"/admin/projects/{project_id}?msg=No+tasks+found", status_code=303)
+
+    llm_svc = LLMService(
+        provider=settings_val.llm_provider,
+        model=settings_val.llm_model,
+        api_key=settings_val.llm_api_key,
+        base_url=settings_val.llm_base_url,
+    )
+    generated = await llm_svc.generate_project_description(project.name, sample_titles)
+    description_text = generated.get("description")
+    description_value = description_text if isinstance(description_text, str) else ""
+    example_patterns = generated.get("example_patterns")
+    examples_json: dict[str, object] = {
+        "example_patterns": (example_patterns if isinstance(example_patterns, list) else [])
+    }
+
+    version_repo = ProjectPromptVersionRepo(session)
+    event_repo = SystemEventRepo(session)
+    prompt_svc = PromptVersioningService(version_repo, event_repo)
+    previous_active = await version_repo.get_active_for_project(project_id)
+
+    created_version = await prompt_svc.create_version(
+        session,
+        project_id,
+        title=f"Auto-generated from {len(sample_titles)} tasks",
+        description_text=description_value,
+        examples_json=examples_json,
+        change_note="Generated by LLM from project tasks. Review and activate manually.",
+    )
+    created_version.is_active = False
+    await version_repo.save(created_version)
+    if previous_active is not None:
+        previous_active.is_active = True
+        await version_repo.save(previous_active)
+
+    if not project.description and description_value:
+        project.description = description_value
+        await project_repo.save(project)
+
+    await session.commit()
+
+    if is_htmx(request):
+        return Response(
+            status_code=200,
+            headers={
+                "HX-Redirect": f"/admin/projects/{project_id}?msg=Description+generated+as+draft"
+            },
+        )
+    return RedirectResponse(
+        f"/admin/projects/{project_id}?msg=Description+generated+as+draft", status_code=303
+    )
