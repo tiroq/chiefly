@@ -1,0 +1,24 @@
+{% macro sidebar(request) %}
+<div class="sidebar-header">
+  <h2>Chiefly Admin</h2>
+</div>
+<ul class="nav-links">
+  <li class="{{ 'active' if request.url.path == '/admin' else '' }}">
+    <a href="/admin" hx-boost="true">Dashboard</a>
+  </li>
+  <li class="{{ 'active' if '/admin/tasks' in request.url.path else '' }}">
+    <a href="/admin/tasks" hx-boost="true">Tasks</a>
+  </li>
+  <li class="{{ 'active' if '/admin/projects' in request.url.path else '' }}">
+    <a href="/admin/projects" hx-boost="true">Projects</a>
+  </li>
+  <li class="{{ 'active' if '/admin/events' in request.url.path else '' }}">
+    <a href="/admin/events" hx-boost="true">Events</a>
+  </li>
+</ul>
+<div class="sidebar-footer">
+  <form method="post" action="/admin/logout">
+    <button type="submit" class="btn btn-logout">Logout</button>
+  </form>
+</div>
+{% endmacro %}

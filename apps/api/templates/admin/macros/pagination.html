@@ -1,0 +1,21 @@
+{% macro pagination(page, total_pages, base_url, target="#main-content") %}
+{% if total_pages > 1 %}
+<nav class="pagination" aria-label="Pagination">
+  {% if page > 1 %}
+  <a href="{{ base_url }}?page={{ page - 1 }}"
+     hx-get="{{ base_url }}?page={{ page - 1 }}"
+     hx-target="{{ target }}"
+     hx-push-url="true"
+     class="btn">← Previous</a>
+  {% endif %}
+  <span class="page-info">Page {{ page }} of {{ total_pages }}</span>
+  {% if page < total_pages %}
+  <a href="{{ base_url }}?page={{ page + 1 }}"
+     hx-get="{{ base_url }}?page={{ page + 1 }}"
+     hx-target="{{ target }}"
+     hx-push-url="true"
+     class="btn">Next →</a>
+  {% endif %}
+</nav>
+{% endif %}
+{% endmacro %}
