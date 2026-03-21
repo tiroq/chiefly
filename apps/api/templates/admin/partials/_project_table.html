@@ -1,40 +1,64 @@
-<table class="table">
-  <thead>
-    <tr>
-      <th>Name</th>
-      <th>Slug</th>
-      <th>Type</th>
-      <th>Active</th>
-      <th>Task Count</th>
-      <th>Alias Count</th>
-      <th>Actions</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for item in result.items %}
-    <tr>
-      <td>{{ item.project.name }}</td>
-      <td><code>{{ item.project.slug }}</code></td>
-      <td>{{ item.project.project_type }}</td>
-      <td>
-        {% if item.project.is_active %}
-        <span class="badge badge-completed">Yes</span>
-        {% else %}
-        <span class="badge badge-discarded">No</span>
-        {% endif %}
-      </td>
-      <td>{{ item.task_count }}</td>
-      <td>{{ item.alias_count }}</td>
-      <td>
-        <a href="/admin/projects/{{ item.project.id }}" class="btn btn-secondary" style="padding: 0.125rem 0.5rem; font-size: 0.75rem;">View</a>
-      </td>
-    </tr>
-    {% else %}
-    <tr>
-      <td colspan="7" style="text-align: center; padding: var(--spacing-6); color: var(--color-text-muted);">
-        No projects found.
-      </td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+<div id="project-table-container">
+  <div style="display: flex; justify-content: flex-end; margin-bottom: 1rem;">
+    <button
+      class="btn btn-primary"
+      hx-post="/admin/projects/sync"
+      hx-target="#project-table-container"
+      hx-swap="outerHTML"
+    >
+      Sync from Google Tasks
+    </button>
+  </div>
+
+  {% if sync_result is defined and sync_result %}
+  <div class="alert" style="margin-bottom: 1rem; padding: 0.75rem; background: var(--color-bg-card); border: 1px solid var(--color-border); border-radius: 0.375rem;">
+    <p style="margin: 0;">
+      <strong>Sync complete:</strong>
+      {{ sync_result.created|length }} created,
+      {{ sync_result.updated|length }} updated,
+      {{ sync_result.skipped|length }} unchanged.
+    </p>
+  </div>
+  {% endif %}
+
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Slug</th>
+        <th>Type</th>
+        <th>Active</th>
+        <th>Task Count</th>
+        <th>Alias Count</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in result.items %}
+      <tr>
+        <td>{{ item.project.name }}</td>
+        <td><code>{{ item.project.slug }}</code></td>
+        <td>{{ item.project.project_type }}</td>
+        <td>
+          {% if item.project.is_active %}
+          <span class="badge badge-completed">Yes</span>
+          {% else %}
+          <span class="badge badge-discarded">No</span>
+          {% endif %}
+        </td>
+        <td>{{ item.task_count }}</td>
+        <td>{{ item.alias_count }}</td>
+        <td>
+          <a href="/admin/projects/{{ item.project.id }}" class="btn btn-secondary" style="padding: 0.125rem 0.5rem; font-size: 0.75rem;">View</a>
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="7" style="text-align: center; padding: var(--spacing-6); color: var(--color-text-muted);">
+          No projects found.
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>

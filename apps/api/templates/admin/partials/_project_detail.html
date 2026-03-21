@@ -24,6 +24,14 @@
       <strong>Total Tasks:</strong> <span class="text-muted">{{ result.task_count }}</span>
     </div>
   </div>
+  <div style="margin-top: 1rem;">
+    <form hx-post="/admin/projects/{{ result.project.id }}/generate-description"
+          hx-target="body"
+          method="post"
+          style="display: inline;">
+      <button type="submit" class="btn btn-primary">Generate Description</button>
+    </form>
+  </div>
 </div>
 
 <div style="display: grid; grid-template-columns: 1fr; gap: 2rem;">
