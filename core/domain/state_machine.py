@@ -12,7 +12,7 @@ ALLOWED_TRANSITIONS: dict[TaskStatus, set[TaskStatus]] = {
     TaskStatus.ROUTED: {TaskStatus.COMPLETED, TaskStatus.ERROR},
     TaskStatus.COMPLETED: {TaskStatus.ERROR},
     TaskStatus.DISCARDED: {TaskStatus.ERROR},
-    TaskStatus.ERROR: set(),
+    TaskStatus.ERROR: {TaskStatus.NEW},
 }
 
 
