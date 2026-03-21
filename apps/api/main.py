@@ -19,6 +19,7 @@ from apps.api.admin.auth import create_login_router, htmx_exception_handler
 from apps.api.services.scheduler_service import setup_scheduler
 from apps.api.workers.daily_review_worker import run_daily_review
 from apps.api.workers.inbox_poll_worker import run_inbox_poll
+from apps.api.workers.project_sync_worker import run_project_sync
 
 logger = get_logger(__name__)
 
@@ -621,12 +622,20 @@ async def lifespan(app: FastAPI):
     scheduler = setup_scheduler(
         poll_interval_seconds=settings.inbox_poll_interval_seconds,
         daily_review_cron=settings.daily_review_cron,
+        project_sync_cron=settings.project_sync_cron,
         timezone=settings.timezone,
         poll_job=run_inbox_poll,
         review_job=run_daily_review,
+        project_sync_job=run_project_sync,
     )
     scheduler.start()
     logger.info("scheduler_started")
+
+    # Run project sync immediately on startup so projects are available from the first poll
+    try:
+        await run_project_sync()
+    except Exception as e:
+        logger.warning("project_sync_startup_failed", error=str(e))
 
     yield
 

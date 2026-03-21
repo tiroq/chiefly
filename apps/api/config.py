@@ -22,6 +22,7 @@ class Settings(BaseSettings):
 
     inbox_poll_interval_seconds: int = 60
     daily_review_cron: str = "0 9 * * *"
+    project_sync_cron: str = "0 * * * *"
     timezone: str = "UTC"
 
     admin_token: str = "admin"

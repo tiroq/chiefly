@@ -25,9 +25,11 @@ def get_scheduler() -> AsyncIOScheduler:
 def setup_scheduler(
     poll_interval_seconds: int,
     daily_review_cron: str,
+    project_sync_cron: str,
     timezone: str,
     poll_job,
     review_job,
+    project_sync_job,
 ) -> AsyncIOScheduler:
     scheduler = get_scheduler()
 
@@ -67,4 +69,27 @@ def setup_scheduler(
         poll_interval=poll_interval_seconds,
         daily_review_cron=daily_review_cron,
     )
+
+    sync_parts = project_sync_cron.split()
+    if len(sync_parts) == 5:
+        s_minute, s_hour, s_day, s_month, s_dow = sync_parts
+    else:
+        s_minute, s_hour, s_day, s_month, s_dow = "0", "*", "*", "*", "*"
+
+    scheduler.add_job(
+        project_sync_job,
+        trigger=CronTrigger(
+            minute=s_minute,
+            hour=s_hour,
+            day=s_day,
+            month=s_month,
+            day_of_week=s_dow,
+            timezone=timezone,
+        ),
+        id="project_sync",
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+    )
+
     return scheduler
