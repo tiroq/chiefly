@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Chiefly Admin{% endblock %} — Chiefly</title>
+  <link rel="stylesheet" href="/static/admin/styles.css">
+</head>
+<body>
+  <div class="layout">
+    <!-- Sidebar -->
+    <nav class="sidebar">
+      {% from "admin/macros/sidebar.html" import sidebar %}
+      {{ sidebar(request) }}
+    </nav>
+    <!-- Main content -->
+    <main class="main-content">
+      <!-- Toast container for OOB swaps -->
+      <div id="toast-container"></div>
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+  <script src="/static/admin/htmx.min.js"></script>
+</body>
+</html>
