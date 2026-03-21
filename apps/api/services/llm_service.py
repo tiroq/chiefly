@@ -17,7 +17,7 @@ _CLASSIFY_PROMPT_TEMPLATE = """
 You are Chiefly, an AI Chief of Staff. Analyze the following raw task text and
 return a structured JSON classification.
 
-Available projects: {projects}
+{project_context}
 
 Raw task text:
 \"\"\"
@@ -96,15 +96,14 @@ class LLMService:
     async def classify_task(
         self,
         raw_text: str,
-        project_candidates: list[str],
+        project_context: str,
         custom_instructions: str | None = None,
     ) -> TaskClassificationResult:
         """Classify raw task text using LLM.  Non-blocking — runs the sync
         OpenAI call in a thread pool via asyncio.to_thread."""
-        projects_str = ", ".join(project_candidates) if project_candidates else "Personal"
         prompt = _CLASSIFY_PROMPT_TEMPLATE.format(
             raw_text=raw_text,
-            projects=projects_str,
+            project_context=project_context,
         )
         if custom_instructions:
             prompt += f"\n\nProject-specific instructions:\n{custom_instructions}"
@@ -139,6 +138,64 @@ class LLMService:
 
         logger.info("llm_classification_fallback", raw_text=raw_text[:100])
         return _fallback_classification(raw_text)
+
+    async def generate_project_description(
+        self,
+        project_name: str,
+        sample_tasks: list[str],
+    ) -> dict[str, str | list[str]]:
+        """Generate a project description, aliases, and keywords from sample tasks.
+
+        Returns dict with description, aliases, keywords, and example_patterns.
+        """
+        tasks_block = "\n".join(f"- {t}" for t in sample_tasks[:20])
+        prompt = f"""Analyze these tasks from the project \"{project_name}\" and generate metadata.
+
+Tasks:
+{tasks_block}
+
+Return ONLY valid JSON:
+{{
+  "description": "2-3 sentence description of what this project is about",
+  "aliases": ["alias1", "alias2"],
+  "keywords": ["keyword1", "keyword2"],
+  "example_patterns": ["pattern that indicates this project"]
+}}"""
+
+        for attempt in range(2):
+            try:
+                raw_response = await asyncio.to_thread(self._call_llm_sync, prompt)
+                raw_response = raw_response.strip()
+                if raw_response.startswith("```"):
+                    lines = raw_response.split("\n")
+                    raw_response = "\n".join(lines[1:-1])
+                data = json.loads(raw_response)
+                description = data.get("description") if isinstance(data, dict) else None
+                aliases = data.get("aliases") if isinstance(data, dict) else None
+                keywords = data.get("keywords") if isinstance(data, dict) else None
+                example_patterns = data.get("example_patterns") if isinstance(data, dict) else None
+                logger.info("project_description_generated", project=project_name)
+                return {
+                    "description": description if isinstance(description, str) else "",
+                    "aliases": aliases if isinstance(aliases, list) else [],
+                    "keywords": keywords if isinstance(keywords, list) else [],
+                    "example_patterns": (
+                        example_patterns if isinstance(example_patterns, list) else []
+                    ),
+                }
+            except Exception as e:
+                logger.warning(
+                    "project_description_generation_failed", attempt=attempt, error=str(e)
+                )
+                if attempt == 1:
+                    break
+
+        return {
+            "description": f"Tasks related to {project_name}",
+            "aliases": [],
+            "keywords": [],
+            "example_patterns": [],
+        }
 
     def generate_daily_review(self, context_payload: dict[str, list[dict[str, str]]]) -> str:
         lines = ["Here is the daily task summary:"]

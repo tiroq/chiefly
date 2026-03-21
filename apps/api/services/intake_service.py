@@ -138,30 +138,27 @@ class IntakeService:
                 project_id=project.id if project else None,
             )
 
-            # Send Telegram proposal
-            msg_id = await self._telegram.send_proposal(
-                task_id=str(task_item.id),
-                raw_text=raw_text,
-                classification=classification,
-                project_name=project.name if project else None,
-            )
-
-            # Create review session
             review_session = TelegramReviewSession(
                 id=uuid.uuid4(),
                 task_item_id=task_item.id,
                 telegram_chat_id=settings.telegram_chat_id,
-                telegram_message_id=msg_id,
-                status="pending",
+                telegram_message_id=0,
+                status="queued",
             )
             await session_repo.create(review_session)
 
             await self._session.commit()
 
+            from importlib import import_module
+
+            queue_service_module = import_module("apps.api.services.review_queue_service")
+            queue_svc = queue_service_module.ReviewQueueService(self._session, self._telegram)
+            await queue_svc.send_next()
+
             logger.info(
                 "intake_complete",
                 task_item_id=str(task_item.id),
-                telegram_message_id=msg_id,
+                telegram_message_id=0,
                 status=task_item.status,
             )
             return True

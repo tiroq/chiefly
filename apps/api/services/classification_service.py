@@ -30,6 +30,50 @@ class ClassificationService:
         self._prompt_version_repo = prompt_version_repo
         self._alias_repo = alias_repo
 
+    async def _build_project_context(
+        self,
+        available_projects: list[Project],
+    ) -> str:
+        aliases_by_project: dict[uuid.UUID, list[str]] = {}
+        if self._alias_repo is not None:
+            alias_map = await self._alias_repo.get_all_aliases_map()
+            for alias_str, proj_id in alias_map.items():
+                aliases_by_project.setdefault(proj_id, []).append(alias_str)
+
+        prompt_versions: dict[uuid.UUID, object] = {}
+        if self._prompt_version_repo is not None:
+            active_versions = await self._prompt_version_repo.get_all_active()
+            for version in active_versions:
+                prompt_versions[version.project_id] = version
+
+        lines = ["Available projects:"]
+        for project in available_projects:
+            line_parts = [f"\n- **{project.name}**"]
+
+            if project.description:
+                line_parts.append(f"  Description: {project.description}")
+
+            proj_aliases = aliases_by_project.get(project.id, [])
+            if proj_aliases:
+                line_parts.append(f"  Also known as: {', '.join(proj_aliases)}")
+
+            version = prompt_versions.get(project.id)
+            if version is not None:
+                desc = getattr(version, "description_text", None)
+                if desc:
+                    line_parts.append(f"  Detailed description: {desc}")
+                examples = getattr(version, "examples_json", None)
+                if examples and isinstance(examples, list):
+                    examples_str = "; ".join(str(e) for e in examples[:5])
+                    line_parts.append(f"  Example tasks: {examples_str}")
+
+            lines.append("\n".join(line_parts))
+
+        if len(lines) == 1:
+            lines.append("- Personal")
+
+        return "\n".join(lines)
+
     async def classify(
         self,
         raw_text: str,
@@ -43,10 +87,10 @@ class ClassificationService:
         routing_aliases: dict[str, uuid.UUID] = {}
         if self._alias_repo is not None:
             routing_aliases = await self._alias_repo.get_all_aliases_map()
-        project_names = [p.name for p in available_projects]
+        project_context = await self._build_project_context(available_projects)
         classification = await self._llm.classify_task(
             raw_text,
-            project_names,
+            project_context,
             custom_instructions=None,
         )
 
@@ -73,7 +117,7 @@ class ClassificationService:
                     if custom_instructions is not None:
                         classification = await self._llm.classify_task(
                             raw_text,
-                            project_names,
+                            project_context,
                             custom_instructions=custom_instructions,
                         )
 

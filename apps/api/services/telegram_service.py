@@ -41,7 +41,9 @@ def _build_proposal_text(
     safe_raw = html.escape(raw_text)
     safe_title = html.escape(classification.normalized_title)
     safe_project = html.escape(project_name) if project_name else "?"
-    safe_next_action = html.escape(classification.next_action) if classification.next_action else None
+    safe_next_action = (
+        html.escape(classification.next_action) if classification.next_action else None
+    )
     safe_due_hint = html.escape(classification.due_hint) if classification.due_hint else None
 
     lines = [
@@ -157,18 +159,36 @@ class TelegramService:
             raise TelegramError(f"Failed to send proposal: {e}") from e
 
     async def send_project_picker(
-        self, task_id: str, projects: list[tuple[str, str]]
+        self,
+        task_id: str,
+        projects: list[tuple[str, str]],
+        task_title: str | None = None,
+        current_project: str | None = None,
+        suggested_project: str | None = None,
     ) -> int:
-        """Send a project selection keyboard. projects = [(name, slug)]"""
         from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
         short_id = task_id.replace("-", "")
+        lines = ["📁 <b>Select a project:</b>"]
+        if task_title:
+            lines.append(f"\nTask: <i>{html.escape(task_title)}</i>")
+        if current_project:
+            lines.append(f"Current: <b>{html.escape(current_project)}</b>")
+        if suggested_project:
+            lines.append(f"Suggested: {html.escape(suggested_project)}")
+        text = "\n".join(lines)
+
         buttons = []
         for name, slug in projects:
+            label = name
+            if name == current_project:
+                label = f"✓ {name} (current)"
+            elif name == suggested_project:
+                label = f"★ {name} (suggested)"
             buttons.append(
                 [
                     InlineKeyboardButton(
-                        text=name,
+                        text=label,
                         callback_data=ProjectSelectPayload(
                             task_id=short_id, project_slug=slug
                         ).encode(),
@@ -180,7 +200,7 @@ class TelegramService:
             bot = self._get_bot()
             msg = await bot.send_message(
                 chat_id=self._chat_id,
-                text="Select a project:",
+                text=text,
                 reply_markup=keyboard,
             )
             return msg.message_id
@@ -198,9 +218,7 @@ class TelegramService:
                 [
                     InlineKeyboardButton(
                         text=KIND_LABELS.get(kind, kind.value),
-                        callback_data=KindSelectPayload(
-                            task_id=short_id, kind=kind.value
-                        ).encode(),
+                        callback_data=KindSelectPayload(task_id=short_id, kind=kind.value).encode(),
                     )
                 ]
             )
@@ -224,9 +242,7 @@ class TelegramService:
         except Exception as e:
             raise TelegramError(f"Failed to send text: {e}") from e
 
-    async def edit_message_text(
-        self, message_id: int, text: str, reply_markup=None
-    ) -> None:
+    async def edit_message_text(self, message_id: int, text: str, reply_markup=None) -> None:
         try:
             bot = self._get_bot()
             await bot.edit_message_text(
