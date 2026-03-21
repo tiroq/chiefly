@@ -1,0 +1,61 @@
+{% extends "admin/layouts/base.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="flex" style="justify-content: space-between; align-items: center; margin-bottom: var(--spacing-4);">
+    <h1 style="font-size: 1.5rem; font-weight: 600;">Tasks</h1>
+  </div>
+
+  <form id="task-filters" class="flex gap-2" style="margin-bottom: var(--spacing-4); flex-wrap: wrap;"
+        hx-get="/admin/tasks"
+        hx-target="#task-list"
+        hx-push-url="true"
+        hx-trigger="change, submit">
+    
+    <div style="flex: 1; min-width: 200px;">
+      <input type="text" name="search" placeholder="Search tasks..." 
+             value="{{ request.query_params.get('search', '') }}"
+             hx-get="/admin/tasks"
+             hx-target="#task-list"
+             hx-push-url="true"
+             hx-trigger="keyup changed delay:500ms">
+    </div>
+
+    <div style="width: 150px;">
+      <select name="status">
+        <option value="">All Statuses</option>
+        {% for s in statuses %}
+        <option value="{{ s }}" {% if request.query_params.get('status') == s %}selected{% endif %}>{{ s | title }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div style="width: 150px;">
+      <select name="kind">
+        <option value="">All Kinds</option>
+        {% for k in kinds %}
+        <option value="{{ k }}" {% if request.query_params.get('kind') == k %}selected{% endif %}>{{ k | title }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div style="width: 200px;">
+      <select name="project_id">
+        <option value="">All Projects</option>
+        {% for p in projects %}
+        <option value="{{ p.id }}" {% if request.query_params.get('project_id') == p.id|string %}selected{% endif %}>{{ p.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    
+    <button type="submit" class="btn btn-primary">Filter</button>
+    <a href="/admin/tasks" class="btn btn-secondary">Clear</a>
+  </form>
+
+  <div id="task-list">
+    {% include "admin/partials/_task_table.html" %}
+  </div>
+</div>
+{% endblock %}

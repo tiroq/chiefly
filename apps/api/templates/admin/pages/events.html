@@ -1,0 +1,99 @@
+{% extends "admin/layouts/base.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<style>
+  .badge-info { background-color: #e0f2fe; color: #0369a1; }
+  .badge-warning { background-color: #fef08a; color: #a16207; }
+  .summary-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: var(--spacing-4);
+    margin-bottom: var(--spacing-6);
+  }
+  .summary-card {
+    padding: var(--spacing-4);
+    border-radius: 4px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    text-align: center;
+  }
+  .summary-card .count {
+    font-size: 2rem;
+    font-weight: 700;
+    margin-bottom: var(--spacing-1);
+  }
+  .summary-card .label {
+    color: var(--color-text-muted);
+    font-size: 0.875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .filter-bar {
+    display: flex;
+    gap: var(--spacing-4);
+    margin-bottom: var(--spacing-6);
+    align-items: flex-end;
+  }
+  .filter-group {
+    flex: 1;
+  }
+  .filter-group label {
+    display: block;
+    font-size: 0.875rem;
+    font-weight: 500;
+    margin-bottom: var(--spacing-1);
+    color: var(--color-text-muted);
+  }
+</style>
+
+<div class="header-actions flex" style="justify-content: space-between; align-items: center; margin-bottom: var(--spacing-6);">
+  <h1 style="font-size: 1.5rem; font-weight: 600; color: var(--color-text);">{{ title }}</h1>
+</div>
+
+<div class="summary-cards">
+  <div class="summary-card">
+    <div class="count" style="color: var(--color-info);">{{ severity_summary.get('info', 0) }}</div>
+    <div class="label">Info</div>
+  </div>
+  <div class="summary-card">
+    <div class="count" style="color: #ca8a04;">{{ severity_summary.get('warning', 0) }}</div>
+    <div class="label">Warning</div>
+  </div>
+  <div class="summary-card">
+    <div class="count" style="color: var(--color-danger);">{{ severity_summary.get('error', 0) }}</div>
+    <div class="label">Error</div>
+  </div>
+</div>
+
+<div class="card">
+  <form class="filter-bar" hx-get="/admin/events" hx-target="#event-list" hx-push-url="true">
+    <div class="filter-group">
+      <label for="severity">Severity</label>
+      <select name="severity" id="severity" onchange="this.form.dispatchEvent(new Event('submit', {cancelable: true}))">
+        <option value="">All</option>
+        <option value="info" {% if request.query_params.get('severity') == 'info' %}selected{% endif %}>Info</option>
+        <option value="warning" {% if request.query_params.get('severity') == 'warning' %}selected{% endif %}>Warning</option>
+        <option value="error" {% if request.query_params.get('severity') == 'error' %}selected{% endif %}>Error</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <label for="event_type">Event Type</label>
+      <input type="text" name="event_type" id="event_type" placeholder="e.g. task_created" value="{{ request.query_params.get('event_type', '') }}" hx-trigger="keyup changed delay:500ms">
+    </div>
+    <div class="filter-group">
+      <label for="subsystem">Subsystem</label>
+      <input type="text" name="subsystem" id="subsystem" placeholder="e.g. llm" value="{{ request.query_params.get('subsystem', '') }}" hx-trigger="keyup changed delay:500ms">
+    </div>
+    <div>
+      <button type="submit" class="btn btn-primary">Filter</button>
+      <a href="/admin/events" class="btn btn-secondary">Clear</a>
+    </div>
+  </form>
+
+  <div id="event-list">
+    {% include "admin/partials/_event_table.html" %}
+  </div>
+</div>
+{% endblock %}

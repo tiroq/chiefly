@@ -1,0 +1,15 @@
+{% extends "admin/layouts/base.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="header-actions flex" style="justify-content: space-between; align-items: center; margin-bottom: var(--spacing-6);">
+  <h1 style="font-size: 1.5rem; font-weight: 600; color: var(--color-text);">{{ title }}</h1>
+</div>
+
+<div class="card">
+  <div id="project-list">
+    {% include "admin/partials/_project_table.html" %}
+  </div>
+</div>
+{% endblock %}
