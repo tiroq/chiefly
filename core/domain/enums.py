@@ -59,3 +59,20 @@ class ProcessingReason(StrEnum):
     PROMPT_VERSION_CHANGED = "prompt_version_changed"
     CLASSIFICATION_FAILED = "classification_failed"
     LOW_CONFIDENCE_REPROCESS = "low_confidence_reprocess"
+
+
+class TaskRecordState(StrEnum):
+    UNADOPTED = "unadopted"
+    ACTIVE = "active"
+    MISSING = "missing"
+    DELETED = "deleted"
+    ORPHANED = "orphaned"
+
+
+class WorkflowStatus(StrEnum):
+    PENDING = "pending"
+    PROCESSING = "processing"
+    AWAITING_REVIEW = "awaiting_review"
+    APPLIED = "applied"
+    DISCARDED = "discarded"
+    FAILED = "failed"
