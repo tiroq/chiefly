@@ -31,7 +31,7 @@ class SystemEventService:
         severity: str,
         subsystem: str,
         message: str,
-        task_item_id: uuid.UUID | None = None,
+        stable_id: uuid.UUID | None = None,
         project_id: uuid.UUID | None = None,
         payload: dict[str, Any] | None = None,
     ) -> SystemEvent:
@@ -44,7 +44,7 @@ class SystemEventService:
             severity: Severity level ("info", "warning", "error")
             subsystem: Subsystem that generated the event (e.g., "admin", "classification")
             message: Human-readable event message
-            task_item_id: Optional task item ID
+            stable_id: Optional stable task ID
             project_id: Optional project ID
             payload: Optional JSON payload with additional context
 
@@ -57,7 +57,7 @@ class SystemEventService:
             severity=severity,
             subsystem=subsystem,
             message=message,
-            task_item_id=task_item_id,
+            stable_id=stable_id,
             project_id=project_id,
             payload_json=payload,
         )
@@ -75,7 +75,7 @@ class SystemEventService:
         session: AsyncSession,
         action: str,
         message: str,
-        task_item_id: uuid.UUID | None = None,
+        stable_id: uuid.UUID | None = None,
         project_id: uuid.UUID | None = None,
         payload: dict[str, Any] | None = None,
     ) -> SystemEvent:
@@ -88,7 +88,7 @@ class SystemEventService:
             session: Database session
             action: Admin action type
             message: Action description
-            task_item_id: Optional task item ID
+            stable_id: Optional stable task ID
             project_id: Optional project ID
             payload: Optional additional context
 
@@ -101,7 +101,7 @@ class SystemEventService:
             "info",
             "admin",
             message,
-            task_item_id,
+            stable_id,
             project_id,
             payload,
         )
@@ -110,7 +110,7 @@ class SystemEventService:
         self,
         session: AsyncSession,
         message: str,
-        task_item_id: uuid.UUID | None = None,
+        stable_id: uuid.UUID | None = None,
         project_id: uuid.UUID | None = None,
         payload: dict[str, Any] | None = None,
     ) -> SystemEvent:
@@ -122,7 +122,7 @@ class SystemEventService:
         Args:
             session: Database session
             message: Classification event description
-            task_item_id: Optional task item ID
+            stable_id: Optional stable task ID
             project_id: Optional project ID
             payload: Optional classification result details
 
@@ -135,7 +135,7 @@ class SystemEventService:
             "info",
             "classification",
             message,
-            task_item_id,
+            stable_id,
             project_id,
             payload,
         )
@@ -145,7 +145,7 @@ class SystemEventService:
         session: AsyncSession,
         subsystem: str,
         message: str,
-        task_item_id: uuid.UUID | None = None,
+        stable_id: uuid.UUID | None = None,
         payload: dict[str, Any] | None = None,
     ) -> SystemEvent:
         """
@@ -157,7 +157,7 @@ class SystemEventService:
             session: Database session
             subsystem: Subsystem where error occurred
             message: Error description
-            task_item_id: Optional task item ID
+            stable_id: Optional stable task ID
             payload: Optional error details
 
         Returns:
@@ -169,7 +169,7 @@ class SystemEventService:
             "error",
             subsystem,
             message,
-            task_item_id,
+            stable_id,
             None,
             payload,
         )

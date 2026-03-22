@@ -1,5 +1,3 @@
-"""Admin projects service — listing and detail views with task counts."""
-
 from __future__ import annotations
 
 import uuid
@@ -9,7 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.logging import get_logger
 from core.schemas.admin import ProjectDetailResult, ProjectListResult, ProjectWithStats
-from db.models.task_item import TaskItem
+from db.models.task_record import TaskRecord
+from db.models.task_snapshot import TaskSnapshot
 from db.repositories.project_alias_repo import ProjectAliasRepo
 from db.repositories.project_repo import ProjectRepository
 
@@ -25,25 +24,33 @@ class AdminProjectsService:
         self._project_repo = project_repo
         self._alias_repo = alias_repo
 
+    async def _count_tasks_for_project(self, session: AsyncSession, project_id: uuid.UUID) -> int:
+        count_result = await session.execute(
+            select(func.count())
+            .select_from(TaskRecord)
+            .join(
+                TaskSnapshot,
+                (TaskSnapshot.stable_id == TaskRecord.stable_id) & (TaskSnapshot.is_latest == True),  # noqa: E712
+            )
+            .where(
+                TaskSnapshot.payload["project_id"].as_string() == str(project_id),
+            )
+        )
+        return count_result.scalar_one()
+
     async def list_projects(self, session: AsyncSession) -> ProjectListResult:
-        """Return all active projects with per-project task counts."""
         projects = await self._project_repo.list_active()
 
         items: list[ProjectWithStats] = []
         for project in projects:
-            count_result = await session.execute(
-                select(func.count())
-                .select_from(TaskItem)
-                .where(
-                    TaskItem.project_id == project.id,
-                )
-            )
-            task_count = count_result.scalar_one()
-            
+            task_count = await self._count_tasks_for_project(session, project.id)
+
             aliases = await self._alias_repo.list_by_project(project.id)
             alias_count = len(aliases)
-            
-            items.append(ProjectWithStats(project=project, task_count=task_count, alias_count=alias_count))
+
+            items.append(
+                ProjectWithStats(project=project, task_count=task_count, alias_count=alias_count)
+            )
 
         return ProjectListResult(items=items, total=len(items))
 
@@ -52,19 +59,11 @@ class AdminProjectsService:
         session: AsyncSession,
         project_id: uuid.UUID,
     ) -> ProjectDetailResult | None:
-        """Return project detail with task count and aliases, or None if not found."""
         project = await self._project_repo.get_by_id(project_id)
         if project is None:
             return None
 
-        count_result = await session.execute(
-            select(func.count())
-            .select_from(TaskItem)
-            .where(
-                TaskItem.project_id == project_id,
-            )
-        )
-        task_count = count_result.scalar_one()
+        task_count = await self._count_tasks_for_project(session, project_id)
         aliases = await self._alias_repo.list_by_project(project_id)
 
         return ProjectDetailResult(

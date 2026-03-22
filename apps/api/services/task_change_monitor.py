@@ -7,25 +7,24 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.logging import get_logger
 from apps.api.services.system_event_service import SystemEventService
-from core.domain.enums import TaskStatus
-from db.models.task_item import TaskItem
+from core.domain import notes_codec
+from db.models.task_record import TaskRecord
+from db.models.task_snapshot import TaskSnapshot as DbTaskSnapshot
 from db.repositories.system_event_repo import SystemEventRepo
-from db.repositories.task_item_repo import TaskItemRepository
 
 logger = get_logger(__name__)
 
 
 class ChangeType(str, Enum):
-    """Type of change detected."""
-
     TASK_CREATED = "task_created"
     TASK_UPDATED = "task_updated"
     TASK_MOVED_TO_PROJECT = "task_moved_to_project"
@@ -36,90 +35,85 @@ class ChangeType(str, Enum):
 
 
 @dataclass
-class TaskSnapshot:
-    """Snapshot of a task's state at a point in time."""
-
-    task_id: uuid.UUID
+class TaskStateCapture:
+    stable_id: uuid.UUID
     title: str
-    status: str  # Already stored as string (enum value)
+    processing_status: str
     project_id: uuid.UUID | None
-    kind: str | None  # Already stored as string (enum value)
-    confidence_band: str | None  # Already stored as string (enum value)
+    kind: str | None
+    confidence_band: str | None
     updated_at: datetime
-    source_google_task_id: str | None
-    current_google_task_id: str | None
+    current_tasklist_id: str | None
+    current_task_id: str | None
 
 
 @dataclass
 class TaskChange:
-    """Represents a detected change to a task."""
-
     change_type: ChangeType
     task_id: uuid.UUID
     task_title: str
     project_id: uuid.UUID | None
-    before: TaskSnapshot | None
-    after: TaskSnapshot | None
+    before: TaskStateCapture | None
+    after: TaskStateCapture | None
     description: str
     details: dict[str, Any]
     timestamp: datetime
 
 
 class TaskChangeMonitor:
-    """Monitors task changes during pull operations."""
-
     def __init__(self, session: AsyncSession) -> None:
-        """Initialize with database session."""
         self._session = session
-        self._task_repo = TaskItemRepository(session)
         self._event_repo = SystemEventRepo(session)
         self._event_service = SystemEventService(self._event_repo)
-        self._baseline_snapshots: dict[uuid.UUID, TaskSnapshot] = {}
+        self._baseline_captures: dict[uuid.UUID, TaskStateCapture] = {}
         self._detected_changes: list[TaskChange] = []
 
+    async def _load_records_with_snapshots(
+        self,
+    ) -> list[tuple[TaskRecord, DbTaskSnapshot | None]]:
+        stmt = (
+            select(TaskRecord, DbTaskSnapshot)
+            .outerjoin(
+                DbTaskSnapshot,
+                (DbTaskSnapshot.stable_id == TaskRecord.stable_id)
+                & (DbTaskSnapshot.is_latest == True),  # noqa: E712
+            )
+            .order_by(TaskRecord.created_at.desc())
+        )
+        result = await self._session.execute(stmt)
+        return [(row[0], row[1]) for row in result.all()]
+
     async def capture_baseline(self) -> None:
-        """
-        Capture baseline snapshots of all current tasks.
-        Call this before pulling/syncing tasks.
-        """
-        tasks = await self._task_repo.list_all()
-        self._baseline_snapshots = {}
-        for task in tasks:
-            snapshot = self._task_to_snapshot(task)
-            self._baseline_snapshots[task.id] = snapshot
-        logger.info("baseline_captured", task_count=len(self._baseline_snapshots))
+        rows = await self._load_records_with_snapshots()
+        self._baseline_captures = {}
+        for record, snapshot in rows:
+            capture = self._record_to_capture(record, snapshot)
+            self._baseline_captures[record.stable_id] = capture
+        logger.info("baseline_captured", task_count=len(self._baseline_captures))
 
     async def detect_changes(self) -> list[TaskChange]:
-        """
-        Compare current state to baseline and detect all changes.
-        Call this after pulling/syncing tasks.
-        """
         self._detected_changes = []
-        current_tasks = await self._task_repo.list_all()
+        current_rows = await self._load_records_with_snapshots()
 
-        # Convert to dict for easy lookup
-        current_by_id = {task.id: task for task in current_tasks}
+        current_by_id: dict[uuid.UUID, tuple[TaskRecord, DbTaskSnapshot | None]] = {
+            record.stable_id: (record, snapshot) for record, snapshot in current_rows
+        }
 
-        # Detect new tasks and updates
-        for task_id, current_task in current_by_id.items():
-            if task_id not in self._baseline_snapshots:
-                # New task was created
-                await self._handle_task_created(current_task)
+        for stable_id, (record, snapshot) in current_by_id.items():
+            if stable_id not in self._baseline_captures:
+                await self._handle_task_created(record, snapshot)
             else:
-                # Task existed before - check for updates
-                baseline = self._baseline_snapshots[task_id]
-                await self._handle_task_updated(baseline, current_task)
+                baseline = self._baseline_captures[stable_id]
+                await self._handle_task_updated(baseline, record, snapshot)
 
-        # Detect removed tasks (existed in baseline but not now)
-        for task_id, baseline in self._baseline_snapshots.items():
-            if task_id not in current_by_id:
+        for stable_id, baseline in self._baseline_captures.items():
+            if stable_id not in current_by_id:
                 await self._handle_task_removed(baseline)
 
         logger.info("changes_detected", count=len(self._detected_changes))
         return self._detected_changes
 
     async def log_all_changes(self) -> None:
-        """Log all detected changes to SystemEvent."""
         for change in self._detected_changes:
             await self._event_service.log_event(
                 session=self._session,
@@ -127,48 +121,49 @@ class TaskChangeMonitor:
                 severity="info",
                 subsystem="task_monitor",
                 message=change.description,
-                task_item_id=change.task_id,
+                stable_id=change.task_id,
                 project_id=change.project_id,
                 payload={
                     "change_type": change.change_type.value,
                     "details": change.details,
-                    "before": self._snapshot_to_dict(change.before) if change.before else None,
-                    "after": self._snapshot_to_dict(change.after) if change.after else None,
+                    "before": self._capture_to_dict(change.before) if change.before else None,
+                    "after": self._capture_to_dict(change.after) if change.after else None,
                 },
             )
 
-    async def _handle_task_created(self, task: TaskItem) -> None:
-        """Handle detection of a newly created task."""
-        after = self._task_to_snapshot(task)
+    async def _handle_task_created(
+        self, record: TaskRecord, snapshot: DbTaskSnapshot | None
+    ) -> None:
+        after = self._record_to_capture(record, snapshot)
+        title = after.title
         change = TaskChange(
             change_type=ChangeType.TASK_CREATED,
-            task_id=task.id,
-            task_title=task.normalized_title or task.raw_text or "[No title]",
-            project_id=task.project_id,
+            task_id=record.stable_id,
+            task_title=title,
+            project_id=after.project_id,
             before=None,
             after=after,
-            description=f"Task created: {task.normalized_title or task.raw_text}",
+            description=f"Task created: {title}",
             details={
-                "title": task.normalized_title or task.raw_text,
-                "project_id": str(task.project_id) if task.project_id else None,
-                "kind": task.kind,
-                "status": task.status,  # Already stored as string
+                "title": title,
+                "project_id": str(after.project_id) if after.project_id else None,
+                "kind": after.kind,
+                "status": after.processing_status,
             },
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
         )
         self._detected_changes.append(change)
         logger.info(
             "task_created_detected",
-            task_id=task.id,
-            title=task.normalized_title or task.raw_text,
-            project_id=task.project_id,
+            stable_id=record.stable_id,
+            title=title,
+            project_id=after.project_id,
         )
 
-    async def _handle_task_removed(self, baseline: TaskSnapshot) -> None:
-        """Handle detection of a task that was removed."""
+    async def _handle_task_removed(self, baseline: TaskStateCapture) -> None:
         change = TaskChange(
-            change_type=ChangeType.TASK_CREATED,  # Changed to removed in actual implementation
-            task_id=baseline.task_id,
+            change_type=ChangeType.TASK_CREATED,
+            task_id=baseline.stable_id,
             task_title=baseline.title,
             project_id=baseline.project_id,
             before=baseline,
@@ -177,104 +172,81 @@ class TaskChangeMonitor:
             details={
                 "title": baseline.title,
                 "project_id": str(baseline.project_id) if baseline.project_id else None,
-                "was_status": baseline.status,
+                "was_status": baseline.processing_status,
             },
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
         )
         self._detected_changes.append(change)
         logger.info(
             "task_removed_detected",
-            task_id=baseline.task_id,
+            stable_id=baseline.stable_id,
             title=baseline.title,
         )
 
-    async def _handle_task_updated(self, baseline: TaskSnapshot, current: TaskItem) -> None:
-        """Handle detection of task updates."""
-        after = self._task_to_snapshot(current)
-        changes_detail = {}
+    async def _handle_task_updated(
+        self,
+        baseline: TaskStateCapture,
+        record: TaskRecord,
+        snapshot: DbTaskSnapshot | None,
+    ) -> None:
+        after = self._record_to_capture(record, snapshot)
+        changes_detail: dict[str, Any] = {}
         detected_changes: list[tuple[str, TaskChange]] = []
+        title = after.title
 
-        # Check status change
-        if baseline.status != current.status:
+        if baseline.processing_status != after.processing_status:
             changes_detail["status"] = {
-                "before": baseline.status,
-                "after": current.status,
+                "before": baseline.processing_status,
+                "after": after.processing_status,
             }
-            if current.status == TaskStatus.COMPLETED.value:
-                detected_changes.append(
-                    (
-                        "marked_completed",
-                        TaskChange(
-                            change_type=ChangeType.TASK_MARKED_COMPLETED,
-                            task_id=current.id,
-                            task_title=current.normalized_title or current.raw_text or "[No title]",
-                            project_id=current.project_id,
-                            before=baseline,
-                            after=after,
-                            description=f"Task marked completed: {current.normalized_title or current.raw_text}",
-                            details=changes_detail,
-                            timestamp=datetime.utcnow(),
-                        ),
-                    )
+            detected_changes.append(
+                (
+                    "status_changed",
+                    TaskChange(
+                        change_type=ChangeType.TASK_STATUS_CHANGED,
+                        task_id=record.stable_id,
+                        task_title=title,
+                        project_id=after.project_id,
+                        before=baseline,
+                        after=after,
+                        description=f"Task status changed: {baseline.processing_status} → {after.processing_status}",
+                        details=changes_detail,
+                        timestamp=datetime.now(timezone.utc),
+                    ),
                 )
-            else:
-                detected_changes.append(
-                    (
-                        "status_changed",
-                        TaskChange(
-                            change_type=ChangeType.TASK_STATUS_CHANGED,
-                            task_id=current.id,
-                            task_title=current.normalized_title or current.raw_text or "[No title]",
-                            project_id=current.project_id,
-                            before=baseline,
-                            after=after,
-                            description=f"Task status changed: {baseline.status} → {current.status}",
-                            details=changes_detail,
-                            timestamp=datetime.utcnow(),
-                        ),
-                    )
-                )
+            )
 
-        # Check project change
-        if baseline.project_id != current.project_id:
+        if baseline.project_id != after.project_id:
             changes_detail["project_id"] = {
                 "before": str(baseline.project_id) if baseline.project_id else None,
-                "after": str(current.project_id) if current.project_id else None,
+                "after": str(after.project_id) if after.project_id else None,
             }
             detected_changes.append(
                 (
                     "moved",
                     TaskChange(
                         change_type=ChangeType.TASK_MOVED_TO_PROJECT,
-                        task_id=current.id,
-                        task_title=current.normalized_title or current.raw_text or "[No title]",
-                        project_id=current.project_id,
+                        task_id=record.stable_id,
+                        task_title=title,
+                        project_id=after.project_id,
                         before=baseline,
                         after=after,
-                        description=f"Task moved to different project",
+                        description="Task moved to different project",
                         details=changes_detail,
-                        timestamp=datetime.utcnow(),
+                        timestamp=datetime.now(timezone.utc),
                     ),
                 )
             )
 
-        # Check other property changes
-        property_changes = {}
-        current_title = current.normalized_title or current.raw_text or "[No title]"
-        if baseline.title != current_title:
-            property_changes["title"] = {
-                "before": baseline.title,
-                "after": current_title,
-            }
-        if baseline.kind != (current.kind or None):
-            property_changes["kind"] = {
-                "before": baseline.kind,
-                "after": current.kind,
-            }
-        if baseline.confidence_band != (current.confidence_band or None):
+        property_changes: dict[str, Any] = {}
+        if baseline.title != title:
+            property_changes["title"] = {"before": baseline.title, "after": title}
+        if baseline.kind != after.kind:
+            property_changes["kind"] = {"before": baseline.kind, "after": after.kind}
+        if baseline.confidence_band != after.confidence_band:
             property_changes["confidence"] = {
                 "before": baseline.confidence_band,
-                "after": current.confidence_band,
+                "after": after.confidence_band,
             }
 
         if property_changes:
@@ -284,58 +256,72 @@ class TaskChangeMonitor:
                     "properties_changed",
                     TaskChange(
                         change_type=ChangeType.TASK_PROPERTIES_CHANGED,
-                        task_id=current.id,
-                        task_title=current.normalized_title or current.raw_text or "[No title]",
-                        project_id=current.project_id,
+                        task_id=record.stable_id,
+                        task_title=title,
+                        project_id=after.project_id,
                         before=baseline,
                         after=after,
-                        description=f"Task properties updated",
+                        description="Task properties updated",
                         details=changes_detail,
-                        timestamp=datetime.utcnow(),
+                        timestamp=datetime.now(timezone.utc),
                     ),
                 )
             )
 
-        # Log all detected changes for this task
         for change_key, change in detected_changes:
             self._detected_changes.append(change)
             logger.info(
                 "task_change_detected",
-                task_id=current.id,
+                stable_id=record.stable_id,
                 change_type=change_key,
-                title=current.normalized_title or current.raw_text,
+                title=title,
             )
 
-    def _task_to_snapshot(self, task: TaskItem) -> TaskSnapshot:
-        """Convert TaskItem model to Snapshot."""
-        return TaskSnapshot(
-            task_id=task.id,
-            title=task.normalized_title or task.raw_text or "[No title]",
-            status=task.status or TaskStatus.NEW.value,  # status is already a string
-            project_id=task.project_id,
-            kind=task.kind,
-            confidence_band=task.confidence_band,
-            updated_at=task.updated_at,
-            source_google_task_id=task.source_google_task_id,
-            current_google_task_id=task.current_google_task_id,
+    def _record_to_capture(
+        self, record: TaskRecord, snapshot: DbTaskSnapshot | None
+    ) -> TaskStateCapture:
+        payload = snapshot.payload if snapshot and snapshot.payload else {}
+        notes_text = payload.get("notes", "")
+        meta = notes_codec.parse(notes_text) or {}
+
+        title = payload.get("title", "")
+        if not title:
+            title = "[No title]"
+
+        project_id: uuid.UUID | None = None
+        pid_str = meta.get("project_id")
+        if pid_str:
+            try:
+                project_id = uuid.UUID(str(pid_str))
+            except ValueError:
+                pass
+
+        return TaskStateCapture(
+            stable_id=record.stable_id,
+            title=title,
+            processing_status=record.processing_status or "pending",
+            project_id=project_id,
+            kind=meta.get("kind") or payload.get("kind"),
+            confidence_band=meta.get("confidence"),
+            updated_at=record.updated_at,
+            current_tasklist_id=record.current_tasklist_id,
+            current_task_id=record.current_task_id,
         )
 
-    def _snapshot_to_dict(self, snapshot: TaskSnapshot | None) -> dict | None:
-        """Convert Snapshot to dict for JSON serialization."""
-        if not snapshot:
+    def _capture_to_dict(self, capture: TaskStateCapture | None) -> dict[str, Any] | None:
+        if not capture:
             return None
         return {
-            "task_id": str(snapshot.task_id),
-            "title": snapshot.title,
-            "status": snapshot.status,
-            "project_id": str(snapshot.project_id) if snapshot.project_id else None,
-            "kind": snapshot.kind,
-            "confidence_band": snapshot.confidence_band,
-            "updated_at": snapshot.updated_at.isoformat(),
+            "stable_id": str(capture.stable_id),
+            "title": capture.title,
+            "processing_status": capture.processing_status,
+            "project_id": str(capture.project_id) if capture.project_id else None,
+            "kind": capture.kind,
+            "confidence_band": capture.confidence_band,
+            "updated_at": capture.updated_at.isoformat(),
         }
 
     def get_changes_summary(self) -> dict[str, int]:
-        """Get summary counts of detected changes."""
         summary: dict[str, int] = {}
         for change in self._detected_changes:
             change_type = change.change_type.value
@@ -343,7 +329,6 @@ class TaskChangeMonitor:
         return summary
 
     def get_changes_by_project(self) -> dict[uuid.UUID | None, list[TaskChange]]:
-        """Group detected changes by project."""
         by_project: dict[uuid.UUID | None, list[TaskChange]] = {}
         for change in self._detected_changes:
             project_id = change.project_id
@@ -353,9 +338,7 @@ class TaskChangeMonitor:
         return by_project
 
     def clear_baseline(self) -> None:
-        """Clear baseline snapshots (useful after processing)."""
-        self._baseline_snapshots.clear()
+        self._baseline_captures.clear()
 
     def clear_changes(self) -> None:
-        """Clear detected changes (useful for resetting monitor state)."""
         self._detected_changes.clear()

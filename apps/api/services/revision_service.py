@@ -24,15 +24,15 @@ class RevisionService:
 
     async def create_classification_revision(
         self,
-        task_item_id: uuid.UUID,
+        stable_id: uuid.UUID,
         raw_text: str,
         classification: TaskClassificationResult,
         project_id: uuid.UUID | None,
     ) -> TaskRevision:
-        revision_no = await self._repo.get_next_revision_no(task_item_id)
+        revision_no = await self._repo.get_next_revision_no_by_stable_id(stable_id)
         revision = TaskRevision(
             id=uuid.uuid4(),
-            task_item_id=task_item_id,
+            stable_id=stable_id,
             revision_no=revision_no,
             raw_text=raw_text,
             proposal_json=classification.model_dump(),
@@ -45,7 +45,7 @@ class RevisionService:
 
     async def create_decision_revision(
         self,
-        task_item_id: uuid.UUID,
+        stable_id: uuid.UUID,
         raw_text: str,
         decision: ReviewAction,
         classification: TaskClassificationResult,
@@ -53,10 +53,10 @@ class RevisionService:
         user_notes: str | None = None,
         final_kind: TaskKind | None = None,
     ) -> TaskRevision:
-        revision_no = await self._repo.get_next_revision_no(task_item_id)
+        revision_no = await self._repo.get_next_revision_no_by_stable_id(stable_id)
         revision = TaskRevision(
             id=uuid.uuid4(),
-            task_item_id=task_item_id,
+            stable_id=stable_id,
             revision_no=revision_no,
             raw_text=raw_text,
             proposal_json=classification.model_dump(),
@@ -69,5 +69,5 @@ class RevisionService:
         )
         return await self._repo.create(revision)
 
-    async def list_revisions(self, task_item_id: uuid.UUID) -> list[TaskRevision]:
-        return await self._repo.list_by_task(task_item_id)
+    async def list_revisions(self, stable_id: uuid.UUID) -> list[TaskRevision]:
+        return await self._repo.list_by_stable_id(stable_id)

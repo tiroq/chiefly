@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from typing import TypedDict
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,9 +9,8 @@ from apps.api.logging import get_logger
 from apps.api.services.telegram_service import TelegramService
 from core.domain.enums import ConfidenceBand, TaskKind
 from core.schemas.llm import TaskClassificationResult
-from db.repositories.project_repo import ProjectRepository
 from db.repositories.review_session_repo import ReviewSessionRepository
-from db.repositories.task_item_repo import TaskItemRepository
+from db.repositories.task_snapshot_repo import TaskSnapshotRepository
 
 logger = get_logger(__name__)
 
@@ -40,45 +40,53 @@ class ReviewQueueService:
         if next_item is None:
             return False
 
-        task_repo = TaskItemRepository(self._session)
-        task = await task_repo.get_by_id(next_item.task_item_id)
-        if task is None:
-            logger.warning("queued_review_task_missing", task_item_id=str(next_item.task_item_id))
+        proposed = next_item.proposed_changes or {}
+        if not proposed:
+            logger.warning(
+                "queued_review_missing_proposed_changes",
+                session_id=str(next_item.id),
+            )
             next_item.status = "resolved"
             await session_repo.save(next_item)
             await self._session.commit()
             return await self.send_next()
 
-        project_repo = ProjectRepository(self._session)
-        project = await project_repo.get_by_id(task.project_id) if task.project_id else None
-
         try:
-            kind = TaskKind(task.kind) if task.kind else TaskKind.TASK
+            kind = TaskKind(proposed.get("kind", "task"))
         except ValueError:
             kind = TaskKind.TASK
 
         try:
-            confidence = (
-                ConfidenceBand(task.confidence_band)
-                if task.confidence_band
-                else ConfidenceBand.MEDIUM
-            )
+            confidence = ConfidenceBand(proposed.get("confidence", "medium"))
         except ValueError:
             confidence = ConfidenceBand.MEDIUM
 
         classification = TaskClassificationResult(
             kind=kind,
-            normalized_title=task.normalized_title or task.raw_text,
+            normalized_title=proposed.get("normalized_title", ""),
             confidence=confidence,
-            next_action=task.next_action,
-            due_hint=task.due_hint,
+            next_action=proposed.get("next_action"),
+            due_hint=proposed.get("due_hint"),
+        )
+
+        raw_text = ""
+        if next_item.stable_id:
+            snapshot_repo = TaskSnapshotRepository(self._session)
+            snapshot = await snapshot_repo.get_latest_by_stable_id(next_item.stable_id)
+            if snapshot and snapshot.payload:
+                raw_text = snapshot.payload.get("title", "")
+        if not raw_text:
+            raw_text = classification.normalized_title
+
+        task_id_for_callback = (
+            str(next_item.stable_id) if next_item.stable_id else str(next_item.id)
         )
 
         msg_id = await self._telegram.send_proposal(
-            task_id=str(task.id),
-            raw_text=task.raw_text,
+            task_id=task_id_for_callback,
+            raw_text=raw_text,
             classification=classification,
-            project_name=project.name if project else None,
+            project_name=proposed.get("project_name"),
         )
 
         next_item.status = "pending"
@@ -92,12 +100,16 @@ class ReviewQueueService:
                 f"📬 {queued_count} more item(s) in queue. Use /next after reviewing."
             )
 
-        logger.info("review_sent", task_item_id=str(task.id), queued_remaining=queued_count)
+        logger.info(
+            "review_sent",
+            stable_id=str(next_item.stable_id),
+            session_id=str(next_item.id),
+            queued_remaining=queued_count,
+        )
         return True
 
     async def get_queue_status(self) -> QueueStatus:
         session_repo = ReviewSessionRepository(self._session)
-        task_repo = TaskItemRepository(self._session)
 
         queued_sessions = await session_repo.list_queued(limit=10)
         has_active = await session_repo.has_active_review()
@@ -105,9 +117,15 @@ class ReviewQueueService:
 
         items = []
         for qs in queued_sessions:
-            task = await task_repo.get_by_id(qs.task_item_id)
-            if task:
-                items.append(task.normalized_title or task.raw_text)
+            proposed = qs.proposed_changes or {}
+            title = proposed.get("normalized_title", "")
+            if not title and qs.stable_id:
+                snapshot_repo = TaskSnapshotRepository(self._session)
+                snapshot = await snapshot_repo.get_latest_by_stable_id(qs.stable_id)
+                if snapshot and snapshot.payload:
+                    title = snapshot.payload.get("title", "")
+            if title:
+                items.append(title)
 
         return {
             "has_active": has_active,
