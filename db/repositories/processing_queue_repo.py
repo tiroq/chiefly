@@ -29,6 +29,24 @@ class ProcessingQueueRepository:
         await self._session.flush()
         return entry
 
+    async def enqueue_by_stable_id(
+        self,
+        stable_id: uuid.UUID,
+        source_task_id: uuid.UUID,
+        reason: ProcessingReason,
+        snapshot_id: int | None = None,
+    ) -> TaskProcessingQueue:
+        entry = TaskProcessingQueue(
+            id=uuid.uuid4(),
+            source_task_id=source_task_id,
+            stable_id=stable_id,
+            processing_status=ProcessingStatus.PENDING,
+            processing_reason=reason,
+        )
+        self._session.add(entry)
+        await self._session.flush()
+        return entry
+
     async def claim_next(self, locked_by: str = "processing_worker") -> TaskProcessingQueue | None:
         """
         Atomically claim the next pending queue entry using SELECT FOR UPDATE SKIP LOCKED.
