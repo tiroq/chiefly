@@ -3,7 +3,7 @@ import os
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import pool
+from sqlalchemy import create_engine, pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
@@ -53,8 +53,25 @@ async def run_async_migrations() -> None:
     await connectable.dispose()
 
 
+def run_sync_migrations() -> None:
+    """Run migrations using a synchronous engine (for psycopg2, etc.)"""
+    url = config.get_main_option("sqlalchemy.url")
+    connectable = create_engine(url, poolclass=pool.NullPool)
+    with connectable.connect() as connection:
+        do_run_migrations(connection)
+    connectable.dispose()
+
+
 def run_migrations_online() -> None:
-    asyncio.run(run_async_migrations())
+    """Run migrations online, detecting sync vs async drivers"""
+    url = config.get_main_option("sqlalchemy.url")
+    
+    # Use async migrations for asyncpg driver, sync for others
+    if url and "asyncpg" in url:
+        asyncio.run(run_async_migrations())
+    else:
+        # Use synchronous driver (psycopg2, etc)
+        run_sync_migrations()
 
 
 if context.is_offline_mode():
