@@ -153,13 +153,18 @@ https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://yourapp.com/telegram/
 ### With Docker Compose
 
 ```bash
+# Production mode
 make docker-up
 make migrate
 make seed
-make dev
+
+# Development mode with hot reload
+make docker-dev
+# View logs: make docker-dev-logs
+# Stop: make docker-dev-stop
 ```
 
-### Without Docker
+### Without Docker (Local Python Dev Server)
 
 ```bash
 # Start Postgres
@@ -168,6 +173,12 @@ make migrate
 make seed
 make dev
 ```
+
+The `make dev` command starts the API server with **hot reload** enabled — any changes to Python files in `apps/`, `core/`, or `db/` will automatically restart the server.
+
+### Hot Reload Reference
+
+For detailed hot reload setup, troubleshooting, and best practices, see [docs/HOT_RELOAD.md](docs/HOT_RELOAD.md).
 
 ---
 
