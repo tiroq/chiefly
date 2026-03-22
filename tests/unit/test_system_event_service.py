@@ -43,7 +43,7 @@ class TestLogEvent:
         self, service, mock_repo, mock_session
     ):
         """Test log_event creates a SystemEvent with all provided fields."""
-        task_item_id = uuid.uuid4()
+        stable_id = uuid.uuid4()
         project_id = uuid.uuid4()
         payload = {"key": "value"}
 
@@ -53,7 +53,7 @@ class TestLogEvent:
             severity="info",
             subsystem="test",
             message="Test message",
-            task_item_id=task_item_id,
+            stable_id=stable_id,
             project_id=project_id,
             payload_json=payload,
             created_at=datetime.now(timezone.utc),
@@ -66,7 +66,7 @@ class TestLogEvent:
             severity="info",
             subsystem="test",
             message="Test message",
-            task_item_id=task_item_id,
+            stable_id=stable_id,
             project_id=project_id,
             payload=payload,
         )
@@ -75,7 +75,7 @@ class TestLogEvent:
         assert result.severity == "info"
         assert result.subsystem == "test"
         assert result.message == "Test message"
-        assert result.task_item_id == task_item_id
+        assert result.stable_id == stable_id
         assert result.project_id == project_id
         assert result.payload_json == payload
         mock_repo.create.assert_called_once()
@@ -116,7 +116,7 @@ class TestLogEvent:
             severity="error",
             subsystem="sys",
             message="error msg",
-            task_item_id=None,
+            stable_id=None,
             project_id=None,
             payload_json=None,
             created_at=datetime.now(timezone.utc),
@@ -131,7 +131,7 @@ class TestLogEvent:
             message="error msg",
         )
 
-        assert result.task_item_id is None
+        assert result.stable_id is None
         assert result.project_id is None
         assert result.payload_json is None
 
@@ -167,8 +167,8 @@ class TestLogAdminAction:
 
     @pytest.mark.asyncio
     async def test_log_admin_action_passes_optional_fields(self, service, mock_repo, mock_session):
-        """Test log_admin_action passes task_item_id, project_id, and payload."""
-        task_item_id = uuid.uuid4()
+        """Test log_admin_action passes stable_id, project_id, and payload."""
+        stable_id = uuid.uuid4()
         project_id = uuid.uuid4()
         payload = {"admin_id": "123"}
 
@@ -178,7 +178,7 @@ class TestLogAdminAction:
             severity="info",
             subsystem="admin",
             message="Config updated",
-            task_item_id=task_item_id,
+            stable_id=stable_id,
             project_id=project_id,
             payload_json=payload,
             created_at=datetime.now(timezone.utc),
@@ -189,12 +189,12 @@ class TestLogAdminAction:
             session=mock_session,
             action="config_updated",
             message="Config updated",
-            task_item_id=task_item_id,
+            stable_id=stable_id,
             project_id=project_id,
             payload=payload,
         )
 
-        assert result.task_item_id == task_item_id
+        assert result.stable_id == stable_id
         assert result.project_id == project_id
         assert result.payload_json == payload
 
@@ -205,14 +205,14 @@ class TestLogClassificationEvent:
     @pytest.mark.asyncio
     async def test_log_classification_event_sets_subsystem(self, service, mock_repo, mock_session):
         """Test log_classification_event sets subsystem='classification'."""
-        task_item_id = uuid.uuid4()
+        stable_id = uuid.uuid4()
         created_event = SystemEvent(
             id=uuid.uuid4(),
             event_type="classification",
             severity="info",
             subsystem="classification",
             message="Task classified",
-            task_item_id=task_item_id,
+            stable_id=stable_id,
             created_at=datetime.now(timezone.utc),
         )
         mock_repo.create.return_value = created_event
@@ -220,7 +220,7 @@ class TestLogClassificationEvent:
         result = await service.log_classification_event(
             session=mock_session,
             message="Task classified",
-            task_item_id=task_item_id,
+            stable_id=stable_id,
         )
 
         assert result.subsystem == "classification"
@@ -279,9 +279,9 @@ class TestLogError:
         mock_repo.create.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_log_error_with_task_item_id_and_payload(self, service, mock_repo, mock_session):
-        """Test log_error includes task_item_id and payload."""
-        task_item_id = uuid.uuid4()
+    async def test_log_error_with_stable_id_and_payload(self, service, mock_repo, mock_session):
+        """Test log_error includes stable_id and payload."""
+        stable_id = uuid.uuid4()
         payload = {"error_code": "LLM_TIMEOUT"}
 
         created_event = SystemEvent(
@@ -290,7 +290,7 @@ class TestLogError:
             severity="error",
             subsystem="llm",
             message="LLM timeout",
-            task_item_id=task_item_id,
+            stable_id=stable_id,
             payload_json=payload,
             created_at=datetime.now(timezone.utc),
         )
@@ -300,9 +300,9 @@ class TestLogError:
             session=mock_session,
             subsystem="llm",
             message="LLM timeout",
-            task_item_id=task_item_id,
+            stable_id=stable_id,
             payload=payload,
         )
 
-        assert result.task_item_id == task_item_id
+        assert result.stable_id == stable_id
         assert result.payload_json == payload

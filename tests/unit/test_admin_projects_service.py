@@ -1,8 +1,3 @@
-"""
-Unit tests for AdminProjectsService.
-Tests project listing and detail views with task counts and alias lists.
-"""
-
 from __future__ import annotations
 
 import uuid
@@ -15,14 +10,8 @@ from db.models.project import Project
 from db.models.project_alias import ProjectAlias
 
 
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
-
 @pytest.fixture
 def mock_project_repo():
-    """Mock ProjectRepository."""
     repo = MagicMock()
     repo.list_active = AsyncMock(return_value=[])
     repo.get_by_id = AsyncMock(return_value=None)
@@ -31,7 +20,6 @@ def mock_project_repo():
 
 @pytest.fixture
 def mock_alias_repo():
-    """Mock ProjectAliasRepo."""
     repo = MagicMock()
     repo.list_by_project = AsyncMock(return_value=[])
     return repo
@@ -39,14 +27,12 @@ def mock_alias_repo():
 
 @pytest.fixture
 def mock_session():
-    """Mock AsyncSession with execute method."""
     session = AsyncMock()
     return session
 
 
 @pytest.fixture
 def service(mock_project_repo, mock_alias_repo):
-    """Create AdminProjectsService with mocked repos."""
     from apps.api.services.admin_projects_service import AdminProjectsService
 
     return AdminProjectsService(
@@ -56,24 +42,15 @@ def service(mock_project_repo, mock_alias_repo):
 
 
 def _mock_scalar_one(value):
-    """Create a mock result that returns value from scalar_one()."""
     result = MagicMock()
     result.scalar_one.return_value = value
     return result
 
 
-# ---------------------------------------------------------------------------
-# Tests: list_projects
-# ---------------------------------------------------------------------------
-
-
 class TestListProjects:
-    """Tests for list_projects method."""
-
     async def test_list_projects_returns_projects_with_task_counts(
         self, service, mock_session, mock_project_repo
     ):
-        """list_projects returns list of projects with task counts."""
         project_a = MagicMock(spec=Project)
         project_a.id = uuid.uuid4()
         project_b = MagicMock(spec=Project)
@@ -82,8 +59,8 @@ class TestListProjects:
         mock_project_repo.list_active.return_value = [project_a, project_b]
         mock_session.execute = AsyncMock(
             side_effect=[
-                _mock_scalar_one(5),  # task count for project_a
-                _mock_scalar_one(12),  # task count for project_b
+                _mock_scalar_one(5),
+                _mock_scalar_one(12),
             ]
         )
 
@@ -100,7 +77,6 @@ class TestListProjects:
     async def test_list_projects_returns_empty_list_when_no_projects(
         self, service, mock_session, mock_project_repo
     ):
-        """list_projects returns empty list when no projects exist."""
         mock_project_repo.list_active.return_value = []
 
         result = await service.list_projects(mock_session)
@@ -110,18 +86,10 @@ class TestListProjects:
         assert result.items == []
 
 
-# ---------------------------------------------------------------------------
-# Tests: get_project_detail
-# ---------------------------------------------------------------------------
-
-
 class TestGetProjectDetail:
-    """Tests for get_project_detail method."""
-
     async def test_get_project_detail_returns_none_for_missing_project(
         self, service, mock_session, mock_project_repo
     ):
-        """get_project_detail returns None when project does not exist."""
         mock_project_repo.get_by_id.return_value = None
         project_id = uuid.uuid4()
 
@@ -133,7 +101,6 @@ class TestGetProjectDetail:
     async def test_get_project_detail_returns_project_with_aliases(
         self, service, mock_session, mock_project_repo, mock_alias_repo
     ):
-        """get_project_detail returns project with aliases list."""
         project_id = uuid.uuid4()
         project = MagicMock(spec=Project)
         project.id = project_id
@@ -145,9 +112,7 @@ class TestGetProjectDetail:
 
         mock_project_repo.get_by_id.return_value = project
         mock_alias_repo.list_by_project.return_value = [alias_a, alias_b]
-        mock_session.execute = AsyncMock(
-            side_effect=[_mock_scalar_one(7)]  # task count
-        )
+        mock_session.execute = AsyncMock(side_effect=[_mock_scalar_one(7)])
 
         result = await service.get_project_detail(mock_session, project_id)
 
@@ -159,16 +124,13 @@ class TestGetProjectDetail:
     async def test_get_project_detail_returns_task_count(
         self, service, mock_session, mock_project_repo, mock_alias_repo
     ):
-        """get_project_detail returns task count for the project."""
         project_id = uuid.uuid4()
         project = MagicMock(spec=Project)
         project.id = project_id
 
         mock_project_repo.get_by_id.return_value = project
         mock_alias_repo.list_by_project.return_value = []
-        mock_session.execute = AsyncMock(
-            side_effect=[_mock_scalar_one(23)]  # task count
-        )
+        mock_session.execute = AsyncMock(side_effect=[_mock_scalar_one(23)])
 
         result = await service.get_project_detail(mock_session, project_id)
 
