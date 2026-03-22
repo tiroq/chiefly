@@ -77,7 +77,7 @@ class SyncService:
                 )
                 record_stable_id = record.stable_id
 
-                snapshot = await snapshot_repo.create(
+                await snapshot_repo.create(
                     tasklist_id=inbox_list_id,
                     task_id=gtask.id,
                     payload=raw_payload,
@@ -87,7 +87,7 @@ class SyncService:
                 )
 
                 reason = ProcessingReason.NEW_TASK
-                await queue_repo.enqueue_by_stable_id(
+                _ = await queue_repo.enqueue_by_stable_id(
                     stable_id=record_stable_id,
                     source_task_id=source_task.id,
                     reason=reason,
@@ -124,7 +124,7 @@ class SyncService:
                 old_hash = latest_snapshot.content_hash if latest_snapshot else None
 
                 if old_hash != content_hash:
-                    snapshot = await snapshot_repo.create(
+                    await snapshot_repo.create(
                         tasklist_id=inbox_list_id,
                         task_id=gtask.id,
                         payload=raw_payload,
@@ -132,7 +132,7 @@ class SyncService:
                         stable_id=record_stable_id,
                         google_updated=gtask.updated,
                     )
-                    await queue_repo.enqueue_by_stable_id(
+                    _ = await queue_repo.enqueue_by_stable_id(
                         stable_id=record_stable_id,
                         source_task_id=source_task.id,
                         reason=ProcessingReason.SOURCE_CHANGED,
@@ -186,7 +186,7 @@ class SyncService:
             existing.google_updated_at = google_updated_at
             existing.content_hash = content_hash
             existing.synced_at = datetime.now(tz=timezone.utc)
-            await source_repo.upsert(existing)
+            _ = await source_repo.upsert(existing)
             return existing
 
     def _resolve_identity(
@@ -195,7 +195,7 @@ class SyncService:
     ) -> tuple[uuid.UUID, TaskRecordState]:
         if envelope and "stable_id" in envelope:
             try:
-                stable_id = uuid.UUID(envelope["stable_id"])
+                stable_id = uuid.UUID(str(envelope["stable_id"]))
                 return stable_id, TaskRecordState.ACTIVE
             except (ValueError, TypeError):
                 pass
