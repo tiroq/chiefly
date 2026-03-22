@@ -1,10 +1,10 @@
-.PHONY: install dev test lint migrate seed docker-up docker-down
+.PHONY: install dev test lint migrate seed docker-up docker-down docker-logs docker-dev docker-dev-logs docker-dev-stop
 
 install:
 	pip install -e ".[dev]"
 
 dev:
-	uvicorn apps.api.main:app --reload --host 0.0.0.0 --port 8000
+	uvicorn apps.api.main:app --reload --reload-dir apps --reload-dir core --reload-dir db --host 0.0.0.0 --port 8000 --log-level debug
 
 test:
 	pytest tests/ -v
@@ -35,3 +35,12 @@ docker-down:
 
 docker-logs:
 	docker compose -f infra/docker/docker-compose.yml logs -f
+
+docker-dev:
+	docker compose -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.dev.yml up -d
+
+docker-dev-logs:
+	docker compose -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.dev.yml logs -f
+
+docker-dev-stop:
+	docker compose -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.dev.yml down
