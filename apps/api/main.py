@@ -618,28 +618,38 @@ async def lifespan(app: FastAPI):
         app.state.bot = None
         app.state.dispatcher = None
 
-    # Set up scheduler
-    scheduler = setup_scheduler(
-        poll_interval_seconds=settings.inbox_poll_interval_seconds,
-        daily_review_cron=settings.daily_review_cron,
-        project_sync_cron=settings.project_sync_cron,
-        timezone=settings.timezone,
-        poll_job=run_inbox_poll,
-        review_job=run_daily_review,
-        project_sync_job=run_project_sync,
-    )
-    scheduler.start()
-    logger.info("scheduler_started")
+    # Set up scheduler (disabled in development to avoid blocking on external services)
+    scheduler = None
+    if settings.app_env != "development":
+        scheduler = setup_scheduler(
+            poll_interval_seconds=settings.inbox_poll_interval_seconds,
+            daily_review_cron=settings.daily_review_cron,
+            project_sync_cron=settings.project_sync_cron,
+            timezone=settings.timezone,
+            poll_job=run_inbox_poll,
+            review_job=run_daily_review,
+            project_sync_job=run_project_sync,
+        )
+        scheduler.start()
+        logger.info("scheduler_started")
+    else:
+        logger.info("scheduler_disabled_in_development")
 
     # Run project sync immediately on startup so projects are available from the first poll
-    try:
-        await run_project_sync()
-    except Exception as e:
-        logger.warning("project_sync_startup_failed", error=str(e))
+    # Skip in development to avoid blocking on external LLM service
+    if settings.app_env != "development":
+        try:
+            await run_project_sync()
+            logger.info("project_sync_startup_completed")
+        except Exception as e:
+            logger.warning("project_sync_startup_failed", error=str(e))
+    else:
+        logger.info("project_sync_skipped_in_development")
 
     yield
 
-    scheduler.shutdown()
+    if scheduler:
+        scheduler.shutdown()
     if polling_task and not polling_task.done():
         polling_task.cancel()
         try:
