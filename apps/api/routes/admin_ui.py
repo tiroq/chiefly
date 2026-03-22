@@ -6,7 +6,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.domain.enums import TaskKind, TaskStatus
+from core.domain.enums import TaskKind, WorkflowStatus
 from apps.api.admin.auth import is_htmx, is_htmx_boosted, require_admin
 from apps.api.config import get_settings
 from apps.api.dependencies import get_session
@@ -24,7 +24,7 @@ from db.repositories.project_alias_repo import ProjectAliasRepo
 from db.repositories.project_repo import ProjectRepository
 from db.repositories.prompt_version_repo import ProjectPromptVersionRepo
 from db.repositories.system_event_repo import SystemEventRepo
-from db.repositories.task_item_repo import TaskItemRepository
+from db.repositories.task_record_repo import TaskRecordRepository
 from db.repositories.task_revision_repo import TaskRevisionRepository
 
 settings = get_settings()
@@ -37,10 +37,9 @@ async def admin_dashboard(
     request: Request,
     session: AsyncSession = Depends(get_session),
 ):
-    task_repo = TaskItemRepository(session)
     project_repo = ProjectRepository(session)
     event_repo = SystemEventRepo(session)
-    svc = AdminDashboardService(task_repo, project_repo, event_repo)
+    svc = AdminDashboardService(project_repo, event_repo)
 
     stats = await svc.get_dashboard_stats(session)
 
@@ -64,12 +63,12 @@ async def admin_projects(
     alias_repo = ProjectAliasRepo(session)
     version_repo = ProjectPromptVersionRepo(session)
     event_repo = SystemEventRepo(session)
-    
+
     svc = AdminProjectsService(project_repo, alias_repo)
     prompt_svc = PromptVersioningService(version_repo, event_repo)
 
     result = await svc.list_projects(session)
-    
+
     # Fetch active prompt versions for each project
     for item in result.items:
         if item.project:
@@ -105,11 +104,11 @@ async def sync_projects(
     alias_repo = ProjectAliasRepo(session)
     version_repo = ProjectPromptVersionRepo(session)
     event_repo = SystemEventRepo(session)
-    
+
     projects_svc = AdminProjectsService(project_repo, alias_repo)
     prompt_svc = PromptVersioningService(version_repo, event_repo)
     project_result = await projects_svc.list_projects(session)
-    
+
     # Fetch active prompt versions for each project
     for item in project_result.items:
         if item.project:
@@ -167,24 +166,21 @@ async def admin_tasks_list(
     page: int = 1,
     session: AsyncSession = Depends(get_session),
 ):
-    task_repo = TaskItemRepository(session)
+    record_repo = TaskRecordRepository(session)
     revision_repo = TaskRevisionRepository(session)
     project_repo = ProjectRepository(session)
-    svc = AdminTasksService(task_repo, revision_repo)
+    svc = AdminTasksService(record_repo, revision_repo)
 
     parsed_status = None
     if status:
         try:
-            parsed_status = TaskStatus(status)
+            parsed_status = WorkflowStatus(status)
         except ValueError:
             pass
 
-    parsed_kind = None
+    parsed_kind: str | None = None
     if kind:
-        try:
-            parsed_kind = TaskKind(kind)
-        except ValueError:
-            pass
+        parsed_kind = kind
 
     parsed_project_id = None
     if project_id:
@@ -203,7 +199,7 @@ async def admin_tasks_list(
     )
 
     projects = await project_repo.list_active()
-    statuses = [s.value for s in TaskStatus]
+    statuses = [s.value for s in WorkflowStatus]
     kinds = [k.value for k in TaskKind]
 
     context = {
@@ -226,10 +222,10 @@ async def admin_task_detail(
     task_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
 ):
-    task_repo = TaskItemRepository(session)
+    record_repo = TaskRecordRepository(session)
     revision_repo = TaskRevisionRepository(session)
     project_repo = ProjectRepository(session)
-    svc = AdminTasksService(task_repo, revision_repo)
+    svc = AdminTasksService(record_repo, revision_repo)
 
     result = await svc.get_task_detail(session, task_id)
     if result is None or result.task is None:
@@ -374,16 +370,16 @@ async def view_prompt_version(
     """View detailed information for a specific prompt version."""
     version_repo = ProjectPromptVersionRepo(session)
     version = await version_repo.get_by_id(version_id)
-    
+
     if version is None:
         raise HTTPException(status_code=404, detail="Prompt version not found")
-    
+
     context = {
         "request": request,
         "version": version,
         "project_id": project_id,
     }
-    
+
     return templates.TemplateResponse("admin/partials/_prompt_detail_modal.html", context)
 
 
@@ -397,16 +393,16 @@ async def edit_prompt_version(
     """Load prompt version for editing in a modal form."""
     version_repo = ProjectPromptVersionRepo(session)
     version = await version_repo.get_by_id(version_id)
-    
+
     if version is None:
         raise HTTPException(status_code=404, detail="Prompt version not found")
-    
+
     context = {
         "request": request,
         "version": version,
         "project_id": project_id,
     }
-    
+
     return templates.TemplateResponse("admin/partials/_prompt_edit_modal.html", context)
 
 
@@ -427,15 +423,15 @@ async def save_edited_prompt_version(
     version_repo = ProjectPromptVersionRepo(session)
     event_repo = SystemEventRepo(session)
     prompt_svc = PromptVersioningService(version_repo, event_repo)
-    
+
     # Get the original version
     original_version = await version_repo.get_by_id(version_id)
     if original_version is None:
         raise HTTPException(status_code=404, detail="Prompt version not found")
-    
+
     # Check if original was active
     was_active = original_version.is_active
-    
+
     # Parse examples JSON
     parsed_examples = None
     if examples_json:
@@ -443,7 +439,7 @@ async def save_edited_prompt_version(
             parsed_examples = json.loads(examples_json)
         except json.JSONDecodeError:
             raise HTTPException(status_code=400, detail="Invalid JSON in examples")
-    
+
     # Create new version with incremented version_no
     # If original was active, new version will be active and original deactivated
     # If original was inactive, new version will be inactive
@@ -451,7 +447,7 @@ async def save_edited_prompt_version(
         # Deactivate the old version first
         original_version.is_active = False
         await version_repo.save(original_version)
-        
+
         # Create new version as active
         new_version = await prompt_svc.create_version(
             session,
@@ -481,9 +477,9 @@ async def save_edited_prompt_version(
             change_note=change_note,
         )
         await version_repo.create(new_version)
-    
+
     await session.commit()
-    
+
     if is_htmx(request):
         return Response(
             status_code=200,

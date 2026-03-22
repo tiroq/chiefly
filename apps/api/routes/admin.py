@@ -11,24 +11,30 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.dependencies import get_session
 from apps.api.logging import get_logger
-from core.schemas.api import DailyReviewResponse, TaskItemResponse
+from core.schemas.api import DailyReviewResponse
 from db.repositories.daily_review_repo import DailyReviewRepository
-from db.repositories.task_item_repo import TaskItemRepository
+from db.repositories.task_record_repo import TaskRecordRepository
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 logger = get_logger(__name__)
 
 
-@router.get("/tasks/{task_id}", response_model=TaskItemResponse)
+@router.get("/tasks/{task_id}")
 async def get_task(
     task_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
-) -> TaskItemResponse:
-    repo = TaskItemRepository(session)
-    task = await repo.get_by_id(task_id)
+) -> dict[str, str | None]:
+    repo = TaskRecordRepository(session)
+    task = await repo.get_by_stable_id(task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
-    return TaskItemResponse.model_validate(task)
+    return {
+        "stable_id": str(task.stable_id),
+        "processing_status": task.processing_status,
+        "state": task.state,
+        "current_tasklist_id": task.current_tasklist_id,
+        "current_task_id": task.current_task_id,
+    }
 
 
 @router.get("/reviews/latest", response_model=DailyReviewResponse)
@@ -43,15 +49,17 @@ async def get_latest_review(
 
 
 @router.post("/poll-inbox-now")
-async def poll_inbox_now() -> dict:
+async def poll_inbox_now() -> dict[str, str]:
     """Manually trigger an inbox poll."""
     from apps.api.services.scheduler_service import get_scheduler
+
     scheduler = get_scheduler()
     job = scheduler.get_job("inbox_poll")
     if job:
         scheduler.modify_job("inbox_poll", next_run_time=None)
         from apscheduler.util import datetime_to_utc_timestamp
         import datetime
+
         scheduler.modify_job(
             "inbox_poll",
             next_run_time=datetime.datetime.now(datetime.timezone.utc),
@@ -60,10 +68,11 @@ async def poll_inbox_now() -> dict:
 
 
 @router.post("/send-review-now")
-async def send_review_now() -> dict:
+async def send_review_now() -> dict[str, str]:
     """Manually trigger a daily review."""
     from apps.api.services.scheduler_service import get_scheduler
     import datetime
+
     scheduler = get_scheduler()
     job = scheduler.get_job("daily_review")
     if job:

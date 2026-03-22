@@ -13,27 +13,32 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from apps.api.admin.auth import require_admin
 from apps.api.config import get_settings
 from apps.api.dependencies import get_session
+from apps.api.services.admin_tasks_service import AdminTasksService, build_task_view
 from apps.api.services.classification_service import ClassificationService
 from apps.api.services.google_tasks_service import GoogleTasksService
 from apps.api.services.llm_service import LLMService
 from apps.api.services.project_routing_service import ProjectRoutingService
 from apps.api.services.revision_service import RevisionService
+from apps.api.services.rollback_service import RollbackService
 from apps.api.services.system_event_service import SystemEventService
 from apps.api.services.telegram_service import TelegramService
-from core.domain.enums import TaskKind, TaskStatus
-from core.domain.state_machine import can_transition
+from core.domain import notes_codec
+from core.domain.enums import ProcessingReason, WorkflowStatus
+from core.domain.exceptions import (
+    LockAcquisitionError,
+    RollbackDriftError,
+    RollbackError,
+    TaskNotFoundError,
+)
 from core.schemas.llm import TaskClassificationResult
-from db.models.task_item import TaskItem
-from db.repositories.project_repo import ProjectRepository
 from db.repositories.project_alias_repo import ProjectAliasRepo
-from db.repositories.system_event_repo import SystemEventRepo
-from db.repositories.task_item_repo import TaskItemRepository
-from db.repositories.task_revision_repo import TaskRevisionRepository
-
-from apps.api.services.admin_tasks_service import AdminTasksService
-from core.domain.enums import ProcessingReason, ProcessingStatus
+from db.repositories.project_repo import ProjectRepository
 from db.repositories.processing_queue_repo import ProcessingQueueRepository
 from db.repositories.source_task_repo import SourceTaskRepository
+from db.repositories.system_event_repo import SystemEventRepo
+from db.repositories.task_record_repo import TaskRecordRepository
+from db.repositories.task_revision_repo import TaskRevisionRepository
+from db.repositories.task_snapshot_repo import TaskSnapshotRepository
 
 logger = structlog.get_logger(__name__)
 
@@ -47,40 +52,32 @@ router = APIRouter(
 )
 
 
-@router.post("/{task_id}/retry")
+@router.post("/{stable_id}/retry")
 async def retry_task(
-    task_id: uuid.UUID,
+    stable_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
 ) -> JSONResponse:
-    """Reset an ERROR task back to NEW for re-processing."""
+    """Reset a FAILED task back to PENDING for re-processing."""
     try:
-        repo = TaskItemRepository(session)
-        task = await repo.get_by_id(task_id)
-        if task is None:
+        record_repo = TaskRecordRepository(session)
+        record = await record_repo.get_by_stable_id(stable_id)
+        if record is None:
             raise HTTPException(status_code=404, detail="Task not found")
 
-        if task.status != TaskStatus.ERROR.value:
+        if record.processing_status != WorkflowStatus.FAILED.value:
             raise HTTPException(
                 status_code=400,
-                detail="Task must be in ERROR state to retry",
+                detail="Task must be in FAILED state to retry",
             )
 
-        if not can_transition(TaskStatus(task.status), TaskStatus.NEW):
-            raise HTTPException(
-                status_code=400,
-                detail="Transition from ERROR to NEW is not allowed",
-            )
-
-        task.status = TaskStatus.NEW.value
-        await repo.save(task)
+        await record_repo.update_processing_status(stable_id, WorkflowStatus.PENDING, error=None)
         await session.commit()
 
         event_svc = SystemEventService(SystemEventRepo(session))
         await event_svc.log_admin_action(
             session,
             "task_retried",
-            f"Task {task_id} retried",
-            task_item_id=task_id,
+            f"Task {stable_id} retried",
         )
 
         return JSONResponse(
@@ -90,30 +87,34 @@ async def retry_task(
     except HTTPException:
         raise
     except Exception as exc:
-        logger.error("retry_task_failed", task_id=str(task_id), error=str(exc))
+        logger.error("retry_task_failed", stable_id=str(stable_id), error=str(exc))
         return JSONResponse(
             status_code=500,
             content={"error": f"Failed to retry task: {exc}"},
         )
 
 
-@router.post("/{task_id}/reclassify")
+@router.post("/{stable_id}/reclassify")
 async def reclassify_task(
-    task_id: uuid.UUID,
+    stable_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
 ) -> JSONResponse:
     """Re-run classification on a task."""
     try:
-        task_repo = TaskItemRepository(session)
-        task = await task_repo.get_by_id(task_id)
-        if task is None:
+        record_repo = TaskRecordRepository(session)
+        record = await record_repo.get_by_stable_id(stable_id)
+        if record is None:
             raise HTTPException(status_code=404, detail="Task not found")
 
-        # Load active projects
+        snapshot_repo = TaskSnapshotRepository(session)
+        snapshot = await snapshot_repo.get_latest_by_stable_id(stable_id)
+        raw_text = snapshot.payload.get("title", "") if snapshot and snapshot.payload else ""
+        if not raw_text:
+            raise HTTPException(status_code=400, detail="No raw text found for task")
+
         project_repo = ProjectRepository(session)
         active_projects = await project_repo.list_active()
 
-        # Build classification service
         llm_svc = LLMService(
             provider=settings.llm_provider,
             model=settings.llm_model,
@@ -128,37 +129,24 @@ async def reclassify_task(
             alias_repo=alias_repo,
         )
 
-        # Classify
-        classification, project = await classification_svc.classify(task.raw_text, active_projects)
+        classification, project = await classification_svc.classify(raw_text, active_projects)
 
-        # Update task fields
-        task.normalized_title = classification.normalized_title
-        task.kind = classification.kind
-        task.next_action = classification.next_action
-        task.due_hint = classification.due_hint
-        task.confidence_band = classification.confidence
-        task.project_id = project.id if project else None
-        task.llm_model = settings.llm_model
-        await task_repo.save(task)
-
-        # Create revision
         revision_svc = RevisionService(session)
         await revision_svc.create_classification_revision(
-            task_item_id=task.id,
-            raw_text=task.raw_text,
+            stable_id=stable_id,
+            raw_text=raw_text,
             classification=classification,
             project_id=project.id if project else None,
         )
 
+        await record_repo.update_processing_status(stable_id, WorkflowStatus.PENDING)
         await session.commit()
 
-        # Log system event
         event_svc = SystemEventService(SystemEventRepo(session))
         await event_svc.log_admin_action(
             session,
             "task_reclassified",
-            f"Task {task_id} re-classified",
-            task_item_id=task_id,
+            f"Task {stable_id} re-classified",
         )
 
         return JSONResponse(
@@ -168,35 +156,33 @@ async def reclassify_task(
     except HTTPException:
         raise
     except Exception as exc:
-        logger.error("reclassify_task_failed", task_id=str(task_id), error=str(exc))
+        logger.error("reclassify_task_failed", stable_id=str(stable_id), error=str(exc))
         return JSONResponse(
             status_code=500,
             content={"error": f"Failed to re-classify task: {exc}"},
         )
 
 
-@router.post("/{task_id}/resend")
+@router.post("/{stable_id}/resend")
 async def resend_proposal(
-    task_id: uuid.UUID,
+    stable_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
 ) -> JSONResponse:
     """Re-send a Telegram proposal for a classified task."""
     try:
-        task_repo = TaskItemRepository(session)
-        task = await task_repo.get_by_id(task_id)
-        if task is None:
+        record_repo = TaskRecordRepository(session)
+        record = await record_repo.get_by_stable_id(stable_id)
+        if record is None:
             raise HTTPException(status_code=404, detail="Task not found")
 
-        # Task must have been classified (not still NEW)
-        if task.status == TaskStatus.NEW.value:
+        if record.processing_status == WorkflowStatus.PENDING.value:
             raise HTTPException(
                 status_code=400,
-                detail="Task has not been classified yet. Cannot resend proposal.",
+                detail="Task has not been processed yet. Cannot resend proposal.",
             )
 
-        # Get latest revision to reconstruct classification
         rev_repo = TaskRevisionRepository(session)
-        revisions = await rev_repo.list_by_task(task_id)
+        revisions = await rev_repo.list_by_stable_id(stable_id)
         if not revisions:
             raise HTTPException(
                 status_code=400,
@@ -206,34 +192,37 @@ async def resend_proposal(
         latest_revision = revisions[-1]
         classification = TaskClassificationResult.model_validate(latest_revision.proposal_json)
 
-        # Get project name for proposal
-        project_name = None
-        if task.project_id:
-            project_repo = ProjectRepository(session)
-            project = await project_repo.get_by_id(task.project_id)
-            project_name = project.name if project else None
+        snapshot_repo = TaskSnapshotRepository(session)
+        snapshot = await snapshot_repo.get_latest_by_stable_id(stable_id)
+        raw_text = snapshot.payload.get("title", "") if snapshot and snapshot.payload else ""
+        meta = (
+            notes_codec.parse(snapshot.payload.get("notes", ""))
+            if snapshot and snapshot.payload
+            else {}
+        )
+        project_name = (meta or {}).get("project_name")
 
-        # Send via Telegram
+        if not project_name and classification.project_guess:
+            project_name = classification.project_guess
+
         telegram_svc = TelegramService(
             bot_token=settings.telegram_bot_token,
             chat_id=settings.telegram_chat_id,
         )
         await telegram_svc.send_proposal(
-            task_id=str(task.id),
-            raw_text=task.raw_text,
+            task_id=str(stable_id),
+            raw_text=raw_text,
             classification=classification,
             project_name=project_name,
         )
 
         await session.commit()
 
-        # Log system event
         event_svc = SystemEventService(SystemEventRepo(session))
         await event_svc.log_admin_action(
             session,
             "proposal_resent",
-            f"Proposal for task {task_id} re-sent via Telegram",
-            task_item_id=task_id,
+            f"Proposal for task {stable_id} re-sent via Telegram",
         )
 
         return JSONResponse(
@@ -243,24 +232,30 @@ async def resend_proposal(
     except HTTPException:
         raise
     except Exception as exc:
-        logger.error("resend_proposal_failed", task_id=str(task_id), error=str(exc))
+        logger.error("resend_proposal_failed", stable_id=str(stable_id), error=str(exc))
         return JSONResponse(
             status_code=500,
             content={"error": f"Failed to resend proposal: {exc}"},
         )
 
 
-@router.post("/{task_id}/rewrite")
+@router.post("/{stable_id}/rewrite")
 async def rewrite_task_title(
-    task_id: uuid.UUID,
+    stable_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
 ) -> JSONResponse:
     """Use LLM to rewrite the raw task text into a clean normalized title."""
     try:
-        task_repo = TaskItemRepository(session)
-        task = await task_repo.get_by_id(task_id)
-        if task is None:
+        record_repo = TaskRecordRepository(session)
+        record = await record_repo.get_by_stable_id(stable_id)
+        if record is None:
             raise HTTPException(status_code=404, detail="Task not found")
+
+        snapshot_repo = TaskSnapshotRepository(session)
+        snapshot = await snapshot_repo.get_latest_by_stable_id(stable_id)
+        raw_text = snapshot.payload.get("title", "") if snapshot and snapshot.payload else ""
+        if not raw_text:
+            raise HTTPException(status_code=400, detail="No raw text found for task")
 
         llm_svc = LLMService(
             provider=settings.llm_provider,
@@ -268,18 +263,26 @@ async def rewrite_task_title(
             api_key=settings.llm_api_key,
             base_url=settings.llm_base_url,
         )
-        rewritten = await llm_svc.rewrite_title(task.raw_text)
-        task.normalized_title = rewritten
-        task.llm_model = settings.llm_model
-        await task_repo.save(task)
+        rewritten = await llm_svc.rewrite_title(raw_text)
+
+        if record.current_tasklist_id and record.current_task_id:
+            try:
+                gtasks = GoogleTasksService(settings.google_credentials_file)
+                gtasks.patch_task(
+                    record.current_tasklist_id, record.current_task_id, title=rewritten
+                )
+            except Exception as exc:
+                logger.warning(
+                    "google_tasks_patch_failed", stable_id=str(stable_id), error=str(exc)
+                )
+
         await session.commit()
 
         event_svc = SystemEventService(SystemEventRepo(session))
         await event_svc.log_admin_action(
             session,
             "task_title_rewritten",
-            f"Task {task_id} title rewritten by LLM",
-            task_item_id=task_id,
+            f"Task {stable_id} title rewritten by LLM",
         )
 
         return JSONResponse(
@@ -289,7 +292,7 @@ async def rewrite_task_title(
     except HTTPException:
         raise
     except Exception as exc:
-        logger.error("rewrite_task_title_failed", task_id=str(task_id), error=str(exc))
+        logger.error("rewrite_task_title_failed", stable_id=str(stable_id), error=str(exc))
         return JSONResponse(
             status_code=500,
             content={"error": f"Rewrite failed: {exc}"},
@@ -305,8 +308,8 @@ async def import_tasks_from_google(
     try:
         google_svc = GoogleTasksService(settings.google_credentials_file)
         project_repo = ProjectRepository(session)
-        task_repo = TaskItemRepository(session)
-
+        record_repo = TaskRecordRepository(session)
+        snapshot_repo = TaskSnapshotRepository(session)
         projects = await project_repo.list_active()
         imported = 0
         skipped = 0
@@ -314,7 +317,6 @@ async def import_tasks_from_google(
         for project in projects:
             if not project.google_tasklist_id:
                 continue
-            # Inbox is polled by the intake service; skip it here
             if project.google_tasklist_id == settings.google_tasks_inbox_list_id:
                 continue
 
@@ -331,19 +333,40 @@ async def import_tasks_from_google(
             for gtask in gtasks:
                 if not gtask.title:
                     continue
-                existing = await task_repo.get_by_source_google_task_id(gtask.id)
+
+                existing = await record_repo.get_by_pointer(project.google_tasklist_id, gtask.id)
                 if existing:
                     skipped += 1
                     continue
-                task = TaskItem(
-                    source_google_task_id=gtask.id,
-                    source_google_tasklist_id=project.google_tasklist_id,
-                    raw_text=gtask.title,
-                    status=TaskStatus.ROUTED.value,
-                    project_id=project.id,
-                    is_processed=True,
+
+                stable_id = uuid.uuid4()
+                await record_repo.create(
+                    stable_id=stable_id,
+                    current_tasklist_id=project.google_tasklist_id,
+                    current_task_id=gtask.id,
                 )
-                await task_repo.create(task)
+
+                payload = {
+                    "title": gtask.title,
+                    "status": getattr(gtask, "status", "needsAction"),
+                    "notes": notes_codec.format(
+                        stable_id=stable_id,
+                        metadata={"project_name": project.name, "project_id": str(project.id)},
+                    ),
+                }
+                import hashlib
+
+                content_hash = hashlib.sha256(
+                    f"{gtask.title}|{getattr(gtask, 'notes', '')}".encode()
+                ).hexdigest()
+                await snapshot_repo.create(
+                    stable_id=stable_id,
+                    tasklist_id=project.google_tasklist_id,
+                    task_id=gtask.id,
+                    payload=payload,
+                    content_hash=content_hash,
+                )
+
                 imported += 1
 
         await session.commit()
@@ -355,11 +378,8 @@ async def import_tasks_from_google(
             f"Imported {imported} tasks from Google Tasks ({skipped} already existed)",
         )
 
-        # Return updated task table HTML so HTMX can swap it directly
-        from core.domain.enums import TaskKind, TaskStatus as TS
-        from db.repositories.task_revision_repo import TaskRevisionRepository as TRR
-
-        svc = AdminTasksService(task_repo, TRR(session))
+        revision_repo = TaskRevisionRepository(session)
+        svc = AdminTasksService(record_repo, revision_repo)
         result = await svc.list_tasks(session=session)
         active_projects = await project_repo.list_active()
         msg = f"Imported {imported} task(s). {skipped} already in DB."
@@ -369,8 +389,8 @@ async def import_tasks_from_google(
                 "request": request,
                 "result": result,
                 "projects": active_projects,
-                "statuses": [s.value for s in TS],
-                "kinds": [k.value for k in TaskKind],
+                "statuses": [s.value for s in WorkflowStatus],
+                "kinds": [],
             },
             headers={"HX-Trigger": f'{{"showToast": "{msg}"}}'},
         )
@@ -382,34 +402,39 @@ async def import_tasks_from_google(
         )
 
 
-@router.post("/{task_id}/edit")
+@router.post("/{stable_id}/edit")
 async def edit_task(
-    task_id: uuid.UUID,
+    stable_id: uuid.UUID,
     normalized_title: str = Form(""),
     next_action: str = Form(""),
     kind: str = Form(""),
     project_id: str = Form(""),
     session: AsyncSession = Depends(get_session),
 ) -> JSONResponse:
-    """Manually edit task fields: normalized title, next action, kind, project."""
+    """Manually edit task fields via Google Tasks API."""
     try:
-        task_repo = TaskItemRepository(session)
-        task = await task_repo.get_by_id(task_id)
-        if task is None:
+        record_repo = TaskRecordRepository(session)
+        record = await record_repo.get_by_stable_id(stable_id)
+        if record is None:
             raise HTTPException(status_code=404, detail="Task not found")
 
-        if normalized_title.strip():
-            task.normalized_title = normalized_title.strip()
+        snapshot_repo = TaskSnapshotRepository(session)
+        snapshot = await snapshot_repo.get_latest_by_stable_id(stable_id)
+        payload = snapshot.payload if snapshot and snapshot.payload else {}
+        current_notes = payload.get("notes", "")
+        meta = notes_codec.parse(current_notes) or {}
 
-        task.next_action = next_action.strip() or None
+        if normalized_title.strip():
+            meta["normalized_title"] = normalized_title.strip()
+        if next_action.strip():
+            meta["next_action"] = next_action.strip()
+        elif "next_action" in meta:
+            del meta["next_action"]
 
         if kind.strip():
-            try:
-                task.kind = TaskKind(kind.strip()).value
-            except ValueError:
-                raise HTTPException(status_code=400, detail=f"Invalid kind: {kind!r}")
-        else:
-            task.kind = None
+            meta["kind"] = kind.strip()
+        elif "kind" in meta:
+            del meta["kind"]
 
         new_project_id: uuid.UUID | None = None
         if project_id.strip():
@@ -418,39 +443,74 @@ async def edit_task(
             except ValueError:
                 raise HTTPException(status_code=400, detail="Invalid project_id")
 
-        old_project_id = task.project_id
-        task.project_id = new_project_id
-
-        # Move task in Google Tasks if the project (tasklist) changed
-        if new_project_id != old_project_id:
+        old_project_id_str = meta.get("project_id")
+        if new_project_id:
+            meta["project_id"] = str(new_project_id)
             project_repo = ProjectRepository(session)
-            new_project = await project_repo.get_by_id(new_project_id) if new_project_id else None
-            current_tasklist_id = task.current_google_tasklist_id or task.source_google_tasklist_id
-            current_task_id = task.current_google_task_id or task.source_google_task_id
-            if new_project and new_project.google_tasklist_id != current_tasklist_id:
-                try:
-                    gtasks = GoogleTasksService(settings.google_credentials_file)
-                    moved = gtasks.move_task(
-                        current_tasklist_id,
-                        current_task_id,
-                        new_project.google_tasklist_id,
-                    )
-                    task.current_google_task_id = moved.id
-                    task.current_google_tasklist_id = moved.tasklist_id
-                    if task.normalized_title and task.normalized_title != task.raw_text:
-                        gtasks.patch_task(moved.tasklist_id, moved.id, title=task.normalized_title)
-                except Exception as exc:
-                    logger.warning("google_tasks_move_failed", task_id=str(task_id), error=str(exc))
+            new_project = await project_repo.get_by_id(new_project_id)
+            if new_project:
+                meta["project_name"] = new_project.name
+        elif "project_id" in meta:
+            del meta["project_id"]
+            meta.pop("project_name", None)
 
-        await task_repo.save(task)
+        updated_notes = (
+            notes_codec.format(
+                stable_id=record.stable_id,
+                metadata={k: v for k, v in meta.items() if k != "stable_id"},
+                existing_notes=notes_codec.extract_user_notes(current_notes)
+                if current_notes
+                else None,
+            )
+            if meta
+            else ""
+        )
+
+        if record.current_tasklist_id and record.current_task_id:
+            try:
+                gtasks = GoogleTasksService(settings.google_credentials_file)
+                patch_title = normalized_title.strip() if normalized_title.strip() else None
+                gtasks.patch_task(
+                    record.current_tasklist_id,
+                    record.current_task_id,
+                    title=patch_title,
+                    notes=updated_notes,
+                )
+
+                if new_project_id and str(new_project_id) != str(old_project_id_str or ""):
+                    project_repo = ProjectRepository(session)
+                    new_project = (
+                        await project_repo.get_by_id(new_project_id) if new_project_id else None
+                    )
+                    if (
+                        new_project
+                        and new_project.google_tasklist_id
+                        and new_project.google_tasklist_id != record.current_tasklist_id
+                    ):
+                        moved = gtasks.move_task(
+                            record.current_tasklist_id,
+                            record.current_task_id,
+                            new_project.google_tasklist_id,
+                        )
+                        await record_repo.update_pointer(
+                            stable_id,
+                            moved.tasklist_id,
+                            moved.id,
+                        )
+                        if patch_title:
+                            gtasks.patch_task(
+                                moved.tasklist_id, moved.id, title=patch_title, notes=updated_notes
+                            )
+            except Exception as exc:
+                logger.warning("google_tasks_edit_failed", stable_id=str(stable_id), error=str(exc))
+
         await session.commit()
 
         event_svc = SystemEventService(SystemEventRepo(session))
         await event_svc.log_admin_action(
             session,
             "task_edited",
-            f"Task {task_id} edited manually",
-            task_item_id=task_id,
+            f"Task {stable_id} edited manually",
         )
 
         return JSONResponse(
@@ -460,10 +520,68 @@ async def edit_task(
     except HTTPException:
         raise
     except Exception as exc:
-        logger.error("edit_task_failed", task_id=str(task_id), error=str(exc))
+        logger.error("edit_task_failed", stable_id=str(stable_id), error=str(exc))
         return JSONResponse(
             status_code=500,
             content={"error": f"Failed to edit task: {exc}"},
+        )
+
+
+@router.post("/{stable_id}/rollback/{revision_id}")
+async def rollback_task(
+    stable_id: uuid.UUID,
+    revision_id: uuid.UUID,
+    force: bool = False,
+    session: AsyncSession = Depends(get_session),
+) -> JSONResponse:
+    try:
+        google_svc = GoogleTasksService(settings.google_credentials_file)
+        rollback_svc = RollbackService(session, google_svc)
+
+        rollback_revision = await rollback_svc.rollback(stable_id, revision_id, force=force)
+        await session.commit()
+
+        event_svc = SystemEventService(SystemEventRepo(session))
+        await event_svc.log_admin_action(
+            session,
+            "task_rolled_back",
+            f"Task {stable_id} rolled back to revision {revision_id}",
+            stable_id=stable_id,
+        )
+
+        return JSONResponse(
+            content={
+                "success": True,
+                "message": "Task rolled back successfully",
+                "revision_no": rollback_revision.revision_no,
+            },
+            headers={"HX-Trigger": '{"showToast": "Task rolled back successfully"}'},
+        )
+    except TaskNotFoundError as exc:
+        return JSONResponse(
+            status_code=404,
+            content={"error": str(exc)},
+        )
+    except RollbackDriftError as exc:
+        return JSONResponse(
+            status_code=409,
+            content={"error": str(exc), "drift": True},
+        )
+    except LockAcquisitionError:
+        return JSONResponse(
+            status_code=409,
+            content={"error": "Task is currently being processed. Try again later."},
+        )
+    except RollbackError as exc:
+        return JSONResponse(
+            status_code=400,
+            content={"error": str(exc)},
+        )
+    except Exception as exc:
+        logger.error("rollback_task_failed", stable_id=str(stable_id), error=str(exc))
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"Rollback failed: {exc}"},
         )
 
 
@@ -514,14 +632,9 @@ async def reprocess_source_task(
 
     queue_repo = ProcessingQueueRepository(session)
 
-    existing_task_repo = TaskItemRepository(session)
-    existing_task = await existing_task_repo.get_by_source_google_task_id(source.google_task_id)
-    task_item_id = existing_task.id if existing_task else None
-
     await queue_repo.enqueue(
         source_task_id=source.id,
         reason=ProcessingReason.MANUAL_REPROCESS,
-        task_item_id=task_item_id,
     )
     await session.commit()
 
