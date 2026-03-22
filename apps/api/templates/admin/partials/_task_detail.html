@@ -35,7 +35,8 @@
       {% endif %}
       <button class="btn btn-secondary"
               hx-post="/admin/api/tasks/{{ result.task.id }}/rewrite"
-              hx-swap="none">
+              hx-swap="none"
+              hx-on:htmx:after-request="if(event.detail.successful){setTimeout(function(){location.reload()},500)}">
         LLM Rewrite
       </button>
       <button class="btn btn-secondary"

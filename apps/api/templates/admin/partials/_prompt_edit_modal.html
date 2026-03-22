@@ -1,0 +1,139 @@
+<!-- Prompt Version Edit Modal -->
+<div id="prompt-edit-modal" style="
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1rem;
+">
+  <div style="
+    background: white;
+    border-radius: 8px;
+    max-width: 900px;
+    width: 100%;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+  ">
+    <!-- Header -->
+    <div style="
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1.5rem;
+      border-bottom: 1px solid var(--color-border);
+      position: sticky;
+      top: 0;
+      background: white;
+    ">
+      <div>
+        <h2 style="margin: 0; font-size: 1.25rem;">Edit Prompt Version {{ version.version_no }}</h2>
+        <p style="margin: 0.25rem 0 0 0; color: var(--color-text-muted); font-size: 0.875rem;">
+          {% if version.is_active %}
+            <strong style="color: #166534;">Active version</strong> — Changes will create a new active version
+          {% else %}
+            <strong style="color: #64748b;">Inactive version</strong> — Changes will create a new inactive version
+          {% endif %}
+        </p>
+      </div>
+      <button type="button" onclick="document.getElementById('prompt-edit-modal').remove()" 
+              style="
+                background: none;
+                border: none;
+                font-size: 1.5rem;
+                cursor: pointer;
+                color: var(--color-text-muted);
+                padding: 0;
+                width: 2rem;
+                height: 2rem;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+              " 
+              title="Close">
+        ×
+      </button>
+    </div>
+
+    <!-- Content -->
+    <form hx-post="/admin/projects/{{ project_id }}/prompts/{{ version.id }}/edit" 
+          hx-target="body" 
+          method="post"
+          style="display: flex; flex-direction: column; gap: 0; padding: 1.5rem;">
+      
+      <div style="margin-bottom: 1rem;">
+        <label for="title" style="display: block; margin-bottom: 0.25rem; font-weight: 500;">Title</label>
+        <input type="text" id="title" name="title" placeholder="e.g. v2 - Improved Routing" value="{{ version.title or '' }}">
+      </div>
+      
+      <div style="margin-bottom: 1rem;">
+        <label for="description_text" style="display: block; margin-bottom: 0.25rem; font-weight: 500;">Description</label>
+        <textarea id="description_text" name="description_text" rows="3" placeholder="Project description for the LLM">{{ version.description_text or '' }}</textarea>
+      </div>
+      
+      <div style="margin-bottom: 1rem;">
+        <label for="classification_prompt_text" style="display: block; margin-bottom: 0.25rem; font-weight: 500;">Classification Prompt</label>
+        <textarea id="classification_prompt_text" name="classification_prompt_text" rows="4" placeholder="Custom classification instructions">{{ version.classification_prompt_text or '' }}</textarea>
+      </div>
+      
+      <div style="margin-bottom: 1rem;">
+        <label for="routing_prompt_text" style="display: block; margin-bottom: 0.25rem; font-weight: 500;">Routing Prompt</label>
+        <textarea id="routing_prompt_text" name="routing_prompt_text" rows="4" placeholder="Custom routing instructions">{{ version.routing_prompt_text or '' }}</textarea>
+      </div>
+      
+      <div style="margin-bottom: 1rem;">
+        <label for="examples_json" style="display: block; margin-bottom: 0.25rem; font-weight: 500;">Examples (JSON)</label>
+        <textarea id="examples_json" name="examples_json" rows="4" placeholder='[{"input": "...", "output": "..."}]' style="font-family: monospace;">{% if version.examples_json %}{{ version.examples_json | tojson(indent=2) }}{% endif %}</textarea>
+      </div>
+      
+      <div style="margin-bottom: 1.5rem;">
+        <label for="change_note" style="display: block; margin-bottom: 0.25rem; font-weight: 500;">Change Note</label>
+        <input type="text" id="change_note" name="change_note" placeholder="What changed in this version?" value="{{ version.change_note or '' }}">
+      </div>
+      
+      <!-- Footer with Actions -->
+      <div style="
+        display: flex;
+        gap: 0.5rem;
+        justify-content: flex-end;
+        border-top: 1px solid var(--color-border);
+        padding-top: 1.5rem;
+      ">
+        <button type="button" onclick="document.getElementById('prompt-edit-modal').remove()" 
+                class="btn btn-secondary">Cancel</button>
+        <button type="submit" class="btn btn-primary">
+          {% if version.is_active %}
+            Save as New Active Version
+          {% else %}
+            Save as New Version
+          {% endif %}
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+// Close modal when clicking outside
+document.getElementById('prompt-edit-modal').addEventListener('click', function(e) {
+  if (e.target === this) {
+    this.remove();
+  }
+});
+
+// Close modal with Escape key
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') {
+    const modal = document.getElementById('prompt-edit-modal');
+    if (modal) {
+      modal.remove();
+    }
+  }
+});
+</script>

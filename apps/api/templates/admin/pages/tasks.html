@@ -8,7 +8,9 @@
     <h1 style="font-size: 1.5rem; font-weight: 600;">Tasks</h1>
     <button class="btn btn-primary"
             hx-post="/admin/api/tasks/import-from-google"
-            hx-swap="none">
+            hx-target="#task-list"
+            hx-swap="innerHTML"
+            hx-indicator="this">
       Import from Google
     </button>
   </div>
