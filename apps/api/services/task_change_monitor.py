@@ -143,13 +143,13 @@ class TaskChangeMonitor:
         change = TaskChange(
             change_type=ChangeType.TASK_CREATED,
             task_id=task.id,
-            task_title=task.normalized_title or "[No title]",
+            task_title=task.normalized_title or task.raw_text or "[No title]",
             project_id=task.project_id,
             before=None,
             after=after,
-            description=f"Task created: {task.normalized_title}",
+            description=f"Task created: {task.normalized_title or task.raw_text}",
             details={
-                "title": task.normalized_title,
+                "title": task.normalized_title or task.raw_text,
                 "project_id": str(task.project_id) if task.project_id else None,
                 "kind": task.kind,
                 "status": task.status,  # Already stored as string
@@ -160,7 +160,7 @@ class TaskChangeMonitor:
         logger.info(
             "task_created_detected",
             task_id=task.id,
-            title=task.normalized_title,
+            title=task.normalized_title or task.raw_text,
             project_id=task.project_id,
         )
 
@@ -207,11 +207,11 @@ class TaskChangeMonitor:
                         TaskChange(
                             change_type=ChangeType.TASK_MARKED_COMPLETED,
                             task_id=current.id,
-                            task_title=current.normalized_title or "[No title]",
+                            task_title=current.normalized_title or current.raw_text or "[No title]",
                             project_id=current.project_id,
                             before=baseline,
                             after=after,
-                            description=f"Task marked completed: {current.normalized_title}",
+                            description=f"Task marked completed: {current.normalized_title or current.raw_text}",
                             details=changes_detail,
                             timestamp=datetime.utcnow(),
                         ),
@@ -224,7 +224,7 @@ class TaskChangeMonitor:
                         TaskChange(
                             change_type=ChangeType.TASK_STATUS_CHANGED,
                             task_id=current.id,
-                            task_title=current.normalized_title or "[No title]",
+                            task_title=current.normalized_title or current.raw_text or "[No title]",
                             project_id=current.project_id,
                             before=baseline,
                             after=after,
@@ -247,7 +247,7 @@ class TaskChangeMonitor:
                     TaskChange(
                         change_type=ChangeType.TASK_MOVED_TO_PROJECT,
                         task_id=current.id,
-                        task_title=current.normalized_title or "[No title]",
+                        task_title=current.normalized_title or current.raw_text or "[No title]",
                         project_id=current.project_id,
                         before=baseline,
                         after=after,
@@ -260,10 +260,11 @@ class TaskChangeMonitor:
 
         # Check other property changes
         property_changes = {}
-        if baseline.title != current.normalized_title:
+        current_title = current.normalized_title or current.raw_text or "[No title]"
+        if baseline.title != current_title:
             property_changes["title"] = {
                 "before": baseline.title,
-                "after": current.normalized_title,
+                "after": current_title,
             }
         if baseline.kind != (current.kind or None):
             property_changes["kind"] = {
@@ -284,7 +285,7 @@ class TaskChangeMonitor:
                     TaskChange(
                         change_type=ChangeType.TASK_PROPERTIES_CHANGED,
                         task_id=current.id,
-                        task_title=current.normalized_title or "[No title]",
+                        task_title=current.normalized_title or current.raw_text or "[No title]",
                         project_id=current.project_id,
                         before=baseline,
                         after=after,
@@ -302,14 +303,14 @@ class TaskChangeMonitor:
                 "task_change_detected",
                 task_id=current.id,
                 change_type=change_key,
-                title=current.normalized_title,
+                title=current.normalized_title or current.raw_text,
             )
 
     def _task_to_snapshot(self, task: TaskItem) -> TaskSnapshot:
         """Convert TaskItem model to Snapshot."""
         return TaskSnapshot(
             task_id=task.id,
-            title=task.normalized_title or "[No title]",
+            title=task.normalized_title or task.raw_text or "[No title]",
             status=task.status or TaskStatus.NEW.value,  # status is already a string
             project_id=task.project_id,
             kind=task.kind,
