@@ -113,6 +113,7 @@ class GoogleTasksService:
                             tasklist_id=tasklist_id,
                             due=item.get("due"),
                             updated=item.get("updated"),
+                            raw_payload=item,
                         )
                     )
                 page_token = result.get("nextPageToken")
@@ -135,6 +136,7 @@ class GoogleTasksService:
                 tasklist_id=tasklist_id,
                 due=item.get("due"),
                 updated=item.get("updated"),
+                raw_payload=item,
             )
         except Exception as e:
             logger.warning("get_task failed", task_id=task_id, error=str(e))
