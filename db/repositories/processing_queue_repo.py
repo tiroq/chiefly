@@ -16,12 +16,10 @@ class ProcessingQueueRepository:
         self,
         source_task_id: uuid.UUID,
         reason: ProcessingReason,
-        task_item_id: uuid.UUID | None = None,
     ) -> TaskProcessingQueue:
         entry = TaskProcessingQueue(
             id=uuid.uuid4(),
             source_task_id=source_task_id,
-            task_item_id=task_item_id,
             processing_status=ProcessingStatus.PENDING,
             processing_reason=reason,
         )
@@ -102,17 +100,16 @@ class ProcessingQueueRepository:
         )
         await self._session.flush()
 
-    async def complete(self, entry_id: uuid.UUID, task_item_id: uuid.UUID | None = None) -> None:
+    async def complete(self, entry_id: uuid.UUID) -> None:
         now = datetime.now(tz=timezone.utc)
-        values: dict[str, object] = {
-            "processing_status": ProcessingStatus.COMPLETED,
-            "completed_at": now,
-            "updated_at": now,
-        }
-        if task_item_id is not None:
-            values["task_item_id"] = task_item_id
         await self._session.execute(
-            update(TaskProcessingQueue).where(TaskProcessingQueue.id == entry_id).values(**values)
+            update(TaskProcessingQueue)
+            .where(TaskProcessingQueue.id == entry_id)
+            .values(
+                processing_status=ProcessingStatus.COMPLETED,
+                completed_at=now,
+                updated_at=now,
+            )
         )
         await self._session.flush()
 

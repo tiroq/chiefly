@@ -25,12 +25,7 @@ class TaskRevision(Base):
     __tablename__ = "task_revisions"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
-    task_item_id: Mapped[uuid.UUID] = mapped_column(
-        Uuid,
-        ForeignKey("task_items.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
+    task_item_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True, index=True)
     stable_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid,
         ForeignKey("task_records.stable_id", ondelete="SET NULL"),
@@ -39,7 +34,7 @@ class TaskRevision(Base):
     )
     revision_no: Mapped[int] = mapped_column(Integer, nullable=False)
     raw_text: Mapped[str] = mapped_column(Text, nullable=False)
-    proposal_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    proposal_json: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False, default=dict)
     user_decision: Mapped[str | None] = mapped_column(
         Enum(
             ReviewAction,
@@ -68,10 +63,10 @@ class TaskRevision(Base):
     correlation_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True, unique=True)
     before_tasklist_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     before_task_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    before_state_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    before_state_json: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
     after_tasklist_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     after_task_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    after_state_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    after_state_json: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     success: Mapped[bool | None] = mapped_column(Boolean, nullable=True)

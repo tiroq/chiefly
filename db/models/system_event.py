@@ -14,11 +14,6 @@ class SystemEvent(Base):
     event_type: Mapped[str] = mapped_column(String(50), nullable=False)
     severity: Mapped[str] = mapped_column(String(20), nullable=False)
     subsystem: Mapped[str] = mapped_column(String(50), nullable=False)
-    task_item_id: Mapped[uuid.UUID | None] = mapped_column(
-        Uuid,
-        ForeignKey("task_items.id", ondelete="SET NULL"),
-        nullable=True,
-    )
     stable_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid,
         ForeignKey("task_records.stable_id", ondelete="SET NULL"),
@@ -29,7 +24,7 @@ class SystemEvent(Base):
         ForeignKey("projects.id", ondelete="SET NULL"),
         nullable=True,
     )
-    payload_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    payload_json: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
     message: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

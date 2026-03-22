@@ -1,11 +1,12 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.domain.enums import TaskRecordState, WorkflowStatus
 from db.models.task_record import TaskRecord
+from db.models.task_snapshot import TaskSnapshot
 
 
 class TaskRecordRepository:
@@ -155,3 +156,89 @@ class TaskRecordRepository:
             .values(consecutive_misses=0, updated_at=now)
         )
         await self._session.flush()
+
+    async def list_filtered(
+        self,
+        processing_status: WorkflowStatus | None = None,
+        kind: str | None = None,
+        project_id: uuid.UUID | None = None,
+        search: str | None = None,
+        limit: int = 25,
+        offset: int = 0,
+    ) -> list[tuple[TaskRecord, TaskSnapshot | None]]:
+        stmt = (
+            select(TaskRecord, TaskSnapshot)
+            .outerjoin(
+                TaskSnapshot,
+                (TaskSnapshot.stable_id == TaskRecord.stable_id) & (TaskSnapshot.is_latest == True),  # noqa: E712
+            )
+            .order_by(TaskRecord.created_at.desc())
+        )
+        if processing_status is not None:
+            stmt = stmt.where(TaskRecord.processing_status == processing_status.value)
+        if kind is not None:
+            stmt = stmt.where(TaskSnapshot.payload["kind"].as_string() == kind)
+        if project_id is not None:
+            stmt = stmt.where(TaskSnapshot.payload["project_id"].as_string() == str(project_id))
+        if search is not None:
+            term = f"%{search}%"
+            stmt = stmt.where(
+                or_(
+                    TaskSnapshot.payload["title"].as_string().ilike(term),
+                    TaskSnapshot.payload["notes"].as_string().ilike(term),
+                )
+            )
+        result = await self._session.execute(stmt.limit(limit).offset(offset))
+        return list(result.all())
+
+    async def count_filtered(
+        self,
+        processing_status: WorkflowStatus | None = None,
+        kind: str | None = None,
+        project_id: uuid.UUID | None = None,
+        search: str | None = None,
+    ) -> int:
+        stmt = select(func.count()).select_from(TaskRecord)
+        if kind is not None or project_id is not None or search is not None:
+            stmt = (
+                select(func.count())
+                .select_from(TaskRecord)
+                .outerjoin(
+                    TaskSnapshot,
+                    (TaskSnapshot.stable_id == TaskRecord.stable_id)
+                    & (TaskSnapshot.is_latest == True),  # noqa: E712
+                )
+            )
+        if processing_status is not None:
+            stmt = stmt.where(TaskRecord.processing_status == processing_status.value)
+        if kind is not None:
+            stmt = stmt.where(TaskSnapshot.payload["kind"].as_string() == kind)
+        if project_id is not None:
+            stmt = stmt.where(TaskSnapshot.payload["project_id"].as_string() == str(project_id))
+        if search is not None:
+            term = f"%{search}%"
+            stmt = stmt.where(
+                or_(
+                    TaskSnapshot.payload["title"].as_string().ilike(term),
+                    TaskSnapshot.payload["notes"].as_string().ilike(term),
+                )
+            )
+        result = await self._session.execute(stmt)
+        return result.scalar_one()
+
+    async def get_with_latest_snapshot(
+        self, stable_id: uuid.UUID
+    ) -> tuple[TaskRecord, TaskSnapshot | None] | None:
+        stmt = (
+            select(TaskRecord, TaskSnapshot)
+            .outerjoin(
+                TaskSnapshot,
+                (TaskSnapshot.stable_id == TaskRecord.stable_id) & (TaskSnapshot.is_latest == True),  # noqa: E712
+            )
+            .where(TaskRecord.stable_id == stable_id)
+        )
+        result = await self._session.execute(stmt)
+        row = result.one_or_none()
+        if row is None:
+            return None
+        return (row[0], row[1])

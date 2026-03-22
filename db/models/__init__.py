@@ -5,7 +5,6 @@ from db.models.project_alias import ProjectAlias
 from db.models.project_prompt_version import ProjectPromptVersion
 from db.models.source_task import SourceTask
 from db.models.system_event import SystemEvent
-from db.models.task_item import TaskItem
 from db.models.task_processing_queue import TaskProcessingQueue
 from db.models.task_record import TaskRecord
 from db.models.task_revision import TaskRevision
@@ -18,7 +17,6 @@ __all__ = [
     "ProjectPromptVersion",
     "SourceTask",
     "SystemEvent",
-    "TaskItem",
     "TaskProcessingQueue",
     "TaskRecord",
     "TaskRevision",

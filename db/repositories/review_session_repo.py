@@ -16,12 +16,12 @@ class ReviewSessionRepository:
         )
         return result.scalar_one_or_none()
 
-    async def get_active_by_task(self, task_item_id: uuid.UUID) -> TelegramReviewSession | None:
+    async def get_active_by_stable_id(self, stable_id: uuid.UUID) -> TelegramReviewSession | None:
         result = await self._session.execute(
             select(TelegramReviewSession)
             .where(
-                TelegramReviewSession.task_item_id == task_item_id,
-                TelegramReviewSession.status == "pending",
+                TelegramReviewSession.stable_id == stable_id,
+                TelegramReviewSession.status.in_(["pending", "awaiting_edit"]),
             )
             .order_by(TelegramReviewSession.created_at.desc())
             .limit(1)

@@ -12,12 +12,7 @@ class TelegramReviewSession(Base):
     __tablename__ = "telegram_review_sessions"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
-    task_item_id: Mapped[uuid.UUID] = mapped_column(
-        Uuid,
-        ForeignKey("task_items.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
+    task_item_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True, index=True)
     stable_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid,
         ForeignKey("task_records.stable_id", ondelete="SET NULL"),
