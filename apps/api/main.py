@@ -39,20 +39,19 @@ def _build_telegram_dispatcher():
     from apps.api.services.llm_service import LLMService
     from apps.api.services.project_routing_service import ProjectRoutingService
     from apps.api.services.telegram_service import TelegramService
-    from core.domain.enums import ReviewAction, TaskKind, TaskStatus
+    from core.domain.enums import ReviewAction, TaskKind, WorkflowStatus
     from core.domain.exceptions import TaskNotFoundError
-    from core.domain.state_machine import transition
     from core.schemas.telegram import (
         CallbackPayload,
         KindSelectPayload,
         ProjectSelectPayload,
     )
     from core.utils.ids import parse_uuid
-    from db.models.task_item import TaskItem
+    from db.models.task_revision import TaskRevision
     from db.models.telegram_review_session import TelegramReviewSession
     from db.repositories.project_repo import ProjectRepository
     from db.repositories.review_session_repo import ReviewSessionRepository
-    from db.repositories.task_item_repo import TaskItemRepository
+    from db.repositories.task_record_repo import TaskRecordRepository
     from db.session import get_session_factory
 
     dp = Dispatcher()
@@ -97,28 +96,40 @@ def _build_telegram_dispatcher():
     async def cmd_inbox(message: Message):
         factory = get_session_factory()
         async with factory() as session:
-            repo = TaskItemRepository(session)
-            tasks = await repo.list_by_status(TaskStatus.PROPOSED)
-            if not tasks:
+            repo = TaskRecordRepository(session)
+            rows = await repo.list_filtered(
+                processing_status=WorkflowStatus.AWAITING_REVIEW,
+                limit=10,
+                offset=0,
+            )
+            if not rows:
                 await message.answer("✅ Inbox is empty! No pending proposals.")
                 return
-            lines = [f"📬 <b>Pending proposals ({len(tasks)}):</b>"]
-            for t in tasks[:10]:
-                lines.append(f"  • {t.normalized_title or t.raw_text}")
+            lines = [f"📬 <b>Pending proposals ({len(rows)}):</b>"]
+            for record, snapshot in rows:
+                payload = snapshot.payload if snapshot and snapshot.payload else {}
+                title = payload.get("title") or str(record.stable_id)
+                lines.append(f"  • {title}")
             await message.answer("\n".join(lines))
 
     @dp.message(Command("today"))
     async def cmd_today(message: Message):
         factory = get_session_factory()
         async with factory() as session:
-            repo = TaskItemRepository(session)
-            tasks = await repo.list_active_routed(limit=10)
-            if not tasks:
+            repo = TaskRecordRepository(session)
+            rows = await repo.list_filtered(
+                processing_status=WorkflowStatus.APPLIED,
+                limit=10,
+                offset=0,
+            )
+            if not rows:
                 await message.answer("📭 No active tasks routed today.")
                 return
-            lines = [f"📋 <b>Active tasks ({len(tasks)}):</b>"]
-            for t in tasks:
-                lines.append(f"  • {t.normalized_title or t.raw_text}")
+            lines = [f"📋 <b>Active tasks ({len(rows)}):</b>"]
+            for record, snapshot in rows:
+                payload = snapshot.payload if snapshot and snapshot.payload else {}
+                title = payload.get("title") or str(record.stable_id)
+                lines.append(f"  • {title}")
             await message.answer("\n".join(lines))
 
     @dp.message(Command("projects"))
@@ -144,12 +155,12 @@ def _build_telegram_dispatcher():
     async def cmd_stats(message: Message):
         factory = get_session_factory()
         async with factory() as session:
-            repo = TaskItemRepository(session)
+            repo = TaskRecordRepository(session)
             lines = ["📊 <b>Task Statistics:</b>"]
-            for status in TaskStatus:
-                tasks = await repo.list_by_status(status)
-                if tasks:
-                    lines.append(f"  {status}: {len(tasks)}")
+            for status in WorkflowStatus:
+                count = await repo.count_filtered(processing_status=status)
+                if count:
+                    lines.append(f"  {status.value}: {count}")
             await message.answer("\n".join(lines))
 
     @dp.message(Command("next"))
@@ -192,103 +203,162 @@ def _build_telegram_dispatcher():
 
     # ── Callback Handlers ─────────────────────────────────────────────────────
 
-    async def _get_task_and_session(
-        task_short_id: str, db_session
-    ) -> tuple[TaskItem, TelegramReviewSession | None]:
-        task_repo = TaskItemRepository(db_session)
+    async def _get_review_session(stable_id_hex: str, db_session) -> TelegramReviewSession:
         session_repo = ReviewSessionRepository(db_session)
-        task_uuid = parse_uuid(task_short_id)
-        task = await task_repo.get_by_id(task_uuid)
-        if task is None:
-            raise TaskNotFoundError(f"Task not found: {task_short_id}")
-        review_session = await session_repo.get_active_by_task(task_uuid)
-        return task, review_session
+        stable_id = parse_uuid(stable_id_hex)
+        review_session = await session_repo.get_active_by_stable_id(stable_id)
+        if review_session is None:
+            raise TaskNotFoundError(f"No active review for: {stable_id_hex}")
+        return review_session
 
     @dp.callback_query(F.data.startswith("confirm:"))
     async def handle_confirm(callback: CallbackQuery):
+        if not callback.data:
+            await callback.answer("Invalid callback.", show_alert=True)
+            return
         payload = CallbackPayload.decode(callback.data)
         factory = get_session_factory()
         tg = TelegramService(settings.telegram_bot_token, settings.telegram_chat_id)
 
         async with factory() as session:
-            from apps.api.services.revision_service import RevisionService
-            from core.schemas.llm import TaskClassificationResult
+            from core.utils.datetime import utcnow
+            from db.repositories.task_record_repo import TaskRecordRepository
+            from db.repositories.task_revision_repo import TaskRevisionRepository
 
-            task_repo = TaskItemRepository(session)
             session_repo = ReviewSessionRepository(session)
+            record_repo = TaskRecordRepository(session)
+            revision_repo = TaskRevisionRepository(session)
 
             try:
-                task, review_session = await _get_task_and_session(payload.task_id, session)
+                review_session = await _get_review_session(payload.task_id, session)
             except TaskNotFoundError:
                 await callback.answer("Task not found!", show_alert=True)
                 return
 
-            if task.status != TaskStatus.PROPOSED:
-                await callback.answer("Task already processed.", show_alert=True)
+            stable_id = review_session.stable_id
+            if stable_id is None:
+                await callback.answer("Missing stable ID.", show_alert=True)
                 return
 
-            # Get project info for routing
+            record = await record_repo.get_by_stable_id(stable_id)
+            if record is None:
+                await callback.answer("Task record not found!", show_alert=True)
+                return
+
+            proposed = review_session.proposed_changes or {}
+
             project_repo = ProjectRepository(session)
-            project = await project_repo.get_by_id(task.project_id) if task.project_id else None
-
-            # Move task in Google Tasks
-            gtasks = GoogleTasksService(settings.google_credentials_file)
-            new_gtask_id = task.current_google_task_id
-            new_tasklist_id = task.current_google_tasklist_id
-
-            if project and project.google_tasklist_id != task.source_google_tasklist_id:
+            project_id_str = proposed.get("project_id")
+            project = None
+            if project_id_str:
                 try:
-                    moved = gtasks.move_task(
-                        task.current_google_tasklist_id or task.source_google_tasklist_id,
-                        task.current_google_task_id or task.source_google_task_id,
-                        project.google_tasklist_id,
-                    )
+                    project = await project_repo.get_by_id(uuid.UUID(project_id_str))
+                except (ValueError, TypeError):
+                    pass
+
+            gtasks = GoogleTasksService(settings.google_credentials_file)
+            tl_id = record.current_tasklist_id
+            t_id = record.current_task_id
+
+            if not tl_id or not t_id:
+                await callback.answer("Task location unknown.", show_alert=True)
+                return
+
+            current_google = gtasks.get_task(tl_id, t_id)
+            if current_google is None:
+                await callback.answer("Google task not found.", show_alert=True)
+                return
+
+            before_state = current_google.raw_payload or {
+                "id": current_google.id,
+                "title": current_google.title,
+                "notes": current_google.notes,
+                "status": current_google.status,
+                "due": current_google.due,
+                "updated": current_google.updated,
+            }
+
+            new_gtask_id = t_id
+            new_tasklist_id = tl_id
+            normalized_title = proposed.get("normalized_title")
+
+            if project and project.google_tasklist_id and project.google_tasklist_id != tl_id:
+                try:
+                    moved = gtasks.move_task(tl_id, t_id, project.google_tasklist_id)
                     new_gtask_id = moved.id
                     new_tasklist_id = moved.tasklist_id
-                    # Patch title if normalized
-                    if task.normalized_title and task.normalized_title != task.raw_text:
-                        gtasks.patch_task(
-                            new_tasklist_id, new_gtask_id, title=task.normalized_title
-                        )
+                    if normalized_title and normalized_title != current_google.title:
+                        gtasks.patch_task(new_tasklist_id, new_gtask_id, title=normalized_title)
                 except Exception as e:
                     logger.warning("google_tasks_move_failed", error=str(e))
+            elif normalized_title and normalized_title != current_google.title:
+                try:
+                    gtasks.patch_task(tl_id, t_id, title=normalized_title)
+                except Exception as e:
+                    logger.warning("google_tasks_patch_failed", error=str(e))
 
-            from core.utils.datetime import utcnow
+            after_google = gtasks.get_task(new_tasklist_id, new_gtask_id)
+            after_state = {}
+            if after_google:
+                after_state = after_google.raw_payload or {
+                    "id": after_google.id,
+                    "title": after_google.title,
+                    "notes": after_google.notes,
+                    "status": after_google.status,
+                    "due": after_google.due,
+                    "updated": after_google.updated,
+                }
 
-            task.status = transition(task.status, TaskStatus.CONFIRMED)
-            task.confirmed_at = utcnow()
-            task.current_google_task_id = new_gtask_id
-            task.current_google_tasklist_id = new_tasklist_id
-            task.is_processed = True
-            task.status = transition(TaskStatus.CONFIRMED, TaskStatus.ROUTED)
-            await task_repo.save(task)
-
-            if review_session:
-                review_session.status = "resolved"
-                review_session.resolved_at = utcnow()
-                await session_repo.save(review_session)
-
-            # Revision
-            revision_svc = RevisionService(session)
-            cls_result = TaskClassificationResult(
-                kind=task.kind or "task",
-                normalized_title=task.normalized_title or task.raw_text,
-                confidence=task.confidence_band or "medium",
-                next_action=task.next_action,
+            now = utcnow()
+            rev_no = await revision_repo.get_next_revision_no_by_stable_id(stable_id)
+            confirm_revision = TaskRevision(
+                id=uuid.uuid4(),
+                stable_id=stable_id,
+                revision_no=rev_no,
+                raw_text=current_google.title or "",
+                proposal_json=proposed,
+                user_decision=ReviewAction.CONFIRM,
+                action="confirm",
+                actor_type="user",
+                actor_id="telegram",
+                before_tasklist_id=tl_id,
+                before_task_id=t_id,
+                before_state_json=before_state,
+                after_tasklist_id=new_tasklist_id,
+                after_task_id=new_gtask_id,
+                after_state_json=after_state,
+                started_at=now,
+                finished_at=now,
+                success=True,
+                final_title=normalized_title,
+                final_kind=proposed.get("kind"),
+                final_project_id=project.id if project else None,
+                final_next_action=proposed.get("next_action"),
             )
-            await revision_svc.create_decision_revision(
-                task_item_id=task.id,
-                raw_text=task.raw_text,
-                decision=ReviewAction.CONFIRM,
-                classification=cls_result,
-                project_id=task.project_id,
+            await revision_repo.create(confirm_revision)
+
+            await record_repo.update_pointer(
+                stable_id,
+                new_tasklist_id,
+                new_gtask_id,
+                google_updated=after_google.updated if after_google else None,
             )
+
+            from core.domain.enums import WorkflowStatus
+
+            await record_repo.update_processing_status(stable_id, WorkflowStatus.APPLIED)
+
+            review_session.status = "resolved"
+            review_session.resolved_at = now
+            await session_repo.save(review_session)
+
             await session.commit()
 
         await callback.answer("✅ Task confirmed and routed!")
-        await callback.message.edit_text(
-            callback.message.text + "\n\n✅ <b>Confirmed and routed.</b>"
-        )
+        msg = callback.message
+        if isinstance(msg, Message):
+            msg_text = msg.text or ""
+            await msg.edit_text(msg_text + "\n\n✅ <b>Confirmed and routed.</b>")
 
         async with factory() as session:
             queue_svc = _queue_service(session, tg)
@@ -296,50 +366,68 @@ def _build_telegram_dispatcher():
 
     @dp.callback_query(F.data.startswith("discard:"))
     async def handle_discard(callback: CallbackQuery):
+        if not callback.data:
+            await callback.answer("Invalid callback.", show_alert=True)
+            return
         payload = CallbackPayload.decode(callback.data)
         factory = get_session_factory()
         tg = TelegramService(settings.telegram_bot_token, settings.telegram_chat_id)
 
         async with factory() as session:
-            from apps.api.services.revision_service import RevisionService
-            from core.schemas.llm import TaskClassificationResult
             from core.utils.datetime import utcnow
+            from db.repositories.task_record_repo import TaskRecordRepository
+            from db.repositories.task_revision_repo import TaskRevisionRepository
 
-            task_repo = TaskItemRepository(session)
             session_repo = ReviewSessionRepository(session)
+            record_repo = TaskRecordRepository(session)
+            revision_repo = TaskRevisionRepository(session)
 
             try:
-                task, review_session = await _get_task_and_session(payload.task_id, session)
+                review_session = await _get_review_session(payload.task_id, session)
             except TaskNotFoundError:
                 await callback.answer("Task not found!", show_alert=True)
                 return
 
-            task.status = transition(task.status, TaskStatus.DISCARDED)
-            task.is_processed = True
-            await task_repo.save(task)
+            stable_id = review_session.stable_id
+            proposed = review_session.proposed_changes or {}
+            now = utcnow()
 
-            if review_session:
-                review_session.status = "resolved"
-                review_session.resolved_at = utcnow()
-                await session_repo.save(review_session)
+            if stable_id:
+                rev_no = await revision_repo.get_next_revision_no_by_stable_id(stable_id)
+                discard_revision = TaskRevision(
+                    id=uuid.uuid4(),
+                    stable_id=stable_id,
+                    revision_no=rev_no,
+                    raw_text=proposed.get("normalized_title", ""),
+                    proposal_json=proposed,
+                    user_decision=ReviewAction.DISCARD,
+                    action="discard",
+                    actor_type="user",
+                    actor_id="telegram",
+                    started_at=now,
+                    finished_at=now,
+                    success=True,
+                    final_title=proposed.get("normalized_title"),
+                    final_kind=proposed.get("kind"),
+                    final_next_action=proposed.get("next_action"),
+                )
+                await revision_repo.create(discard_revision)
 
-            revision_svc = RevisionService(session)
-            cls_result = TaskClassificationResult(
-                kind=task.kind or "task",
-                normalized_title=task.normalized_title or task.raw_text,
-                confidence=task.confidence_band or "medium",
-            )
-            await revision_svc.create_decision_revision(
-                task_item_id=task.id,
-                raw_text=task.raw_text,
-                decision=ReviewAction.DISCARD,
-                classification=cls_result,
-                project_id=task.project_id,
-            )
+                from core.domain.enums import WorkflowStatus
+
+                await record_repo.update_processing_status(stable_id, WorkflowStatus.DISCARDED)
+
+            review_session.status = "resolved"
+            review_session.resolved_at = now
+            await session_repo.save(review_session)
+
             await session.commit()
 
         await callback.answer("🗑 Task discarded.")
-        await callback.message.edit_text(callback.message.text + "\n\n🗑 <b>Discarded.</b>")
+        msg = callback.message
+        if isinstance(msg, Message):
+            msg_text = msg.text or ""
+            await msg.edit_text(msg_text + "\n\n🗑 <b>Discarded.</b>")
 
         async with factory() as session:
             queue_svc = _queue_service(session, tg)
@@ -347,26 +435,29 @@ def _build_telegram_dispatcher():
 
     @dp.callback_query(F.data.startswith("change_project:"))
     async def handle_change_project(callback: CallbackQuery):
+        if not callback.data:
+            await callback.answer("Invalid callback.", show_alert=True)
+            return
         payload = CallbackPayload.decode(callback.data)
         factory = get_session_factory()
         tg = TelegramService(settings.telegram_bot_token, settings.telegram_chat_id)
 
         async with factory() as session:
-            task_repo = TaskItemRepository(session)
+            session_repo = ReviewSessionRepository(session)
             project_repo = ProjectRepository(session)
 
-            task_uuid = parse_uuid(payload.task_id)
-            task = await task_repo.get_by_id(task_uuid)
-            projects = await project_repo.list_active()
+            try:
+                review_session = await _get_review_session(payload.task_id, session)
+            except TaskNotFoundError:
+                await callback.answer("Task not found!", show_alert=True)
+                return
 
-            current_project_name = None
-            if task and task.project_id:
-                current_project = await project_repo.get_by_id(task.project_id)
-                if current_project:
-                    current_project_name = current_project.name
+            proposed = review_session.proposed_changes or {}
+            projects = await project_repo.list_active()
+            current_project_name = proposed.get("project_name")
 
         project_list = [(p.name, p.slug) for p in projects]
-        task_title = task.normalized_title or task.raw_text if task else None
+        task_title = proposed.get("normalized_title")
         await tg.send_project_picker(
             task_id=payload.task_id,
             projects=project_list,
@@ -377,6 +468,9 @@ def _build_telegram_dispatcher():
 
     @dp.callback_query(F.data.startswith("change_type:"))
     async def handle_change_type(callback: CallbackQuery):
+        if not callback.data:
+            await callback.answer("Invalid callback.", show_alert=True)
+            return
         payload = CallbackPayload.decode(callback.data)
         tg = TelegramService(settings.telegram_bot_token, settings.telegram_chat_id)
         await tg.send_kind_picker(task_id=payload.task_id)
@@ -384,99 +478,100 @@ def _build_telegram_dispatcher():
 
     @dp.callback_query(F.data.startswith("edit:"))
     async def handle_edit(callback: CallbackQuery):
+        if not callback.data:
+            await callback.answer("Invalid callback.", show_alert=True)
+            return
         payload = CallbackPayload.decode(callback.data)
         factory = get_session_factory()
 
         async with factory() as session:
             session_repo = ReviewSessionRepository(session)
             try:
-                task, review_session = await _get_task_and_session(payload.task_id, session)
+                review_session = await _get_review_session(payload.task_id, session)
             except TaskNotFoundError:
                 await callback.answer("Task not found!", show_alert=True)
                 return
 
-            if review_session:
-                review_session.status = "awaiting_edit"
-                await session_repo.save(review_session)
-                await session.commit()
+            review_session.status = "awaiting_edit"
+            await session_repo.save(review_session)
+            await session.commit()
 
         await callback.answer()
-        await callback.message.answer("✏️ Please send me the new title for this task:")
+        if callback.message:
+            await callback.message.answer("✏️ Please send me the new title for this task:")
 
     @dp.callback_query(F.data.startswith("show_steps:"))
     async def handle_show_steps(callback: CallbackQuery):
+        if not callback.data:
+            await callback.answer("Invalid callback.", show_alert=True)
+            return
         payload = CallbackPayload.decode(callback.data)
         factory = get_session_factory()
 
         async with factory() as session:
             from db.repositories.task_revision_repo import TaskRevisionRepository
 
+            session_repo = ReviewSessionRepository(session)
+            revision_repo = TaskRevisionRepository(session)
+
             try:
-                task, _ = await _get_task_and_session(payload.task_id, session)
+                review_session = await _get_review_session(payload.task_id, session)
             except TaskNotFoundError:
                 await callback.answer("Task not found!", show_alert=True)
                 return
 
-            revision_repo = TaskRevisionRepository(session)
-            revisions = await revision_repo.list_by_task(task.id)
+            proposed = review_session.proposed_changes or {}
+            raw_substeps = proposed.get("substeps")
+            substeps: list[str] = []
+            if isinstance(raw_substeps, list):
+                substeps = [str(step) for step in raw_substeps]
 
-        substeps: list[str] = []
-        for rev in revisions:
-            if rev.proposal_json and isinstance(rev.proposal_json.get("substeps"), list):
-                substeps = rev.proposal_json["substeps"]
-                break
+            if not substeps and review_session.stable_id:
+                revisions = await revision_repo.list_by_stable_id(review_session.stable_id)
+                for rev in revisions:
+                    raw_revision_substeps = (
+                        rev.proposal_json.get("substeps") if rev.proposal_json else []
+                    )
+                    if isinstance(raw_revision_substeps, list):
+                        substeps = [str(step) for step in raw_revision_substeps]
+                        break
 
         if substeps:
             lines = ["📋 <b>Sub-steps:</b>"]
             for i, step in enumerate(substeps, 1):
                 lines.append(f"{i}. {step}")
-            await callback.message.answer("\n".join(lines))
+            if callback.message:
+                await callback.message.answer("\n".join(lines))
         else:
-            await callback.message.answer("No sub-steps recorded for this task.")
+            if callback.message:
+                await callback.message.answer("No sub-steps recorded for this task.")
         await callback.answer()
 
     @dp.callback_query(F.data.startswith("proj:"))
     async def handle_project_selection(callback: CallbackQuery):
+        if not callback.data:
+            await callback.answer("Invalid callback.", show_alert=True)
+            return
         payload = ProjectSelectPayload.decode(callback.data)
         factory = get_session_factory()
 
         async with factory() as session:
-            from apps.api.services.revision_service import RevisionService
-            from core.schemas.llm import TaskClassificationResult
-
-            task_repo = TaskItemRepository(session)
+            session_repo = ReviewSessionRepository(session)
             project_repo = ProjectRepository(session)
 
-            try:
-                task_uuid = parse_uuid(payload.task_id)
-            except ValueError:
-                await callback.answer("Invalid task.", show_alert=True)
-                return
-
-            task = await task_repo.get_by_id(task_uuid)
-            if task is None:
-                await callback.answer("Task not found!", show_alert=True)
+            stable_id = parse_uuid(payload.task_id)
+            review_session = await session_repo.get_active_by_stable_id(stable_id)
+            if review_session is None:
+                await callback.answer("Review session not found.", show_alert=True)
                 return
 
             project = await project_repo.get_by_slug(payload.project_slug)
             if project:
-                task.project_id = project.id
-                await task_repo.save(task)
-
-                revision_svc = RevisionService(session)
-                cls_result = TaskClassificationResult(
-                    kind=task.kind or "task",
-                    normalized_title=task.normalized_title or task.raw_text,
-                    confidence=task.confidence_band or "medium",
-                    next_action=task.next_action,
-                )
-                await revision_svc.create_decision_revision(
-                    task_item_id=task.id,
-                    raw_text=task.raw_text,
-                    decision=ReviewAction.CHANGE_PROJECT,
-                    classification=cls_result,
-                    project_id=project.id,
-                )
+                proposed = dict(review_session.proposed_changes or {})
+                proposed["project_id"] = str(project.id)
+                proposed["project_name"] = project.name
+                review_session.proposed_changes = proposed
+                await session_repo.save(review_session)
 
                 await session.commit()
                 await callback.answer(f"Project changed to {project.name}")
@@ -485,24 +580,19 @@ def _build_telegram_dispatcher():
 
     @dp.callback_query(F.data.startswith("kind:"))
     async def handle_kind_selection(callback: CallbackQuery):
+        if not callback.data:
+            await callback.answer("Invalid callback.", show_alert=True)
+            return
         payload = KindSelectPayload.decode(callback.data)
         factory = get_session_factory()
 
         async with factory() as session:
-            from apps.api.services.revision_service import RevisionService
-            from core.schemas.llm import TaskClassificationResult
+            session_repo = ReviewSessionRepository(session)
 
-            task_repo = TaskItemRepository(session)
-
-            try:
-                task_uuid = parse_uuid(payload.task_id)
-            except ValueError:
-                await callback.answer("Invalid task.", show_alert=True)
-                return
-
-            task = await task_repo.get_by_id(task_uuid)
-            if task is None:
-                await callback.answer("Task not found!", show_alert=True)
+            stable_id = parse_uuid(payload.task_id)
+            review_session = await session_repo.get_active_by_stable_id(stable_id)
+            if review_session is None:
+                await callback.answer("Review session not found.", show_alert=True)
                 return
 
             try:
@@ -511,24 +601,10 @@ def _build_telegram_dispatcher():
                 await callback.answer("Invalid task kind.", show_alert=True)
                 return
 
-            task.kind = new_kind
-            await task_repo.save(task)
-
-            revision_svc = RevisionService(session)
-            cls_result = TaskClassificationResult(
-                kind=new_kind,
-                normalized_title=task.normalized_title or task.raw_text,
-                confidence=task.confidence_band or "medium",
-                next_action=task.next_action,
-            )
-            await revision_svc.create_decision_revision(
-                task_item_id=task.id,
-                raw_text=task.raw_text,
-                decision=ReviewAction.CHANGE_TYPE,
-                classification=cls_result,
-                project_id=task.project_id,
-                final_kind=new_kind,
-            )
+            proposed = dict(review_session.proposed_changes or {})
+            proposed["kind"] = str(new_kind.value)
+            review_session.proposed_changes = proposed
+            await session_repo.save(review_session)
 
             await session.commit()
             await callback.answer(f"Type changed to {payload.kind}")
@@ -537,49 +613,29 @@ def _build_telegram_dispatcher():
 
     @dp.message(F.text & ~F.text.startswith("/"))
     async def handle_text_message(message: Message):
-        """Handle free-text messages – used for the edit title flow."""
         import html as html_mod
 
         chat_id = str(message.chat.id)
         factory = get_session_factory()
 
         async with factory() as session:
-            from apps.api.services.revision_service import RevisionService
-            from core.schemas.llm import TaskClassificationResult
-
             session_repo = ReviewSessionRepository(session)
-            task_repo = TaskItemRepository(session)
             pending = await session_repo.get_pending_edit_by_chat(chat_id)
 
             if pending is None:
-                return  # Not in an edit flow, ignore
-
-            task = await task_repo.get_by_id(pending.task_item_id)
-            if task is None:
                 return
 
-            new_title = message.text.strip()
-            task.normalized_title = new_title[:500]
-            await task_repo.save(task)
+            new_title = message.text.strip() if message.text else ""
+            if not new_title:
+                return
 
-            revision_svc = RevisionService(session)
-            cls_result = TaskClassificationResult(
-                kind=task.kind or "task",
-                normalized_title=new_title[:500],
-                confidence=task.confidence_band or "medium",
-                next_action=task.next_action,
-            )
-            await revision_svc.create_decision_revision(
-                task_item_id=task.id,
-                raw_text=task.raw_text,
-                decision=ReviewAction.EDIT,
-                classification=cls_result,
-                project_id=task.project_id,
-                user_notes=f"Title changed to: {new_title[:500]}",
-            )
+            proposed = dict(pending.proposed_changes or {})
+            proposed["normalized_title"] = new_title[:500]
+            pending.proposed_changes = proposed
 
-            pending.status = "pending"  # Back to normal pending
+            pending.status = "pending"
             await session_repo.save(pending)
+
             await session.commit()
 
         tg = TelegramService(settings.telegram_bot_token, settings.telegram_chat_id)
@@ -598,7 +654,7 @@ async def lifespan(app: FastAPI):
     logger.info("starting_chiefly", env=settings.app_env)
 
     # Build and start Telegram bot
-    polling_task: asyncio.Task | None = None
+    polling_task: asyncio.Task[None] | None = None
     try:
         from aiogram import Bot
         from aiogram.client.default import DefaultBotProperties

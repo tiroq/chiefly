@@ -165,6 +165,13 @@ body {
 .badge-discarded { background-color: #f3f4f6; color: #374151; }
 .badge-error { background-color: #fee2e2; color: #991b1b; }
 
+/* WorkflowStatus badges (new source-of-truth statuses) */
+.badge-pending { background-color: #dbeafe; color: #1e40af; }
+.badge-processing { background-color: #fef3c7; color: #92400e; }
+.badge-awaiting_review { background-color: #e0e7ff; color: #3730a3; }
+.badge-applied { background-color: #dcfce7; color: #166534; }
+.badge-failed { background-color: #fee2e2; color: #991b1b; }
+
 /* Buttons */
 .btn {
   display: inline-flex;

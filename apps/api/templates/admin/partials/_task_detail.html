@@ -30,7 +30,7 @@
         </form>
       </div>
       <div class="flex gap-2" style="align-items: center; flex-wrap: wrap;">
-        <span class="badge badge-{{ result.task.status.lower() if result.task.status else 'new' }}">
+        <span class="badge badge-{{ result.task.status.lower() if result.task.status else 'pending' }}">
           {{ result.task.status }}
         </span>
         {% if result.task.kind %}
@@ -51,7 +51,7 @@
       </div>
     </div>
     <div class="flex gap-2">
-      {% if result.task.status == "error" %}
+      {% if result.task.status == "failed" %}
       <button class="btn btn-primary"
               hx-post="/admin/api/tasks/{{ result.task.id }}/retry"
               hx-swap="none">
@@ -225,11 +225,28 @@ function onDescSaved(form) {
     {% for rev in result.revisions|sort(attribute='revision_no', reverse=True) %}
     <div style="border: 1px solid var(--color-border); border-radius: 4px; overflow: hidden;">
       <div style="background-color: var(--color-background); padding: var(--spacing-3) var(--spacing-4); border-bottom: 1px solid var(--color-border); display: flex; justify-content: space-between; align-items: center;">
-        <div style="font-weight: 600;">
-          Revision #{{ rev.revision_no }}
+        <div style="display: flex; align-items: center; gap: var(--spacing-2);">
+          <span style="font-weight: 600;">Revision #{{ rev.revision_no }}</span>
+          {% if rev.action %}
+          <span class="badge" style="background-color: {% if rev.action == 'rollback' %}var(--color-warning, #f59e0b){% else %}var(--color-primary){% endif %}; color: white; font-size: 0.7rem;">
+            {{ rev.action }}
+          </span>
+          {% endif %}
         </div>
-        <div class="text-muted" style="font-size: 0.875rem;">
-          {{ rev.created_at.strftime('%Y-%m-%d %H:%M:%S') }}
+        <div style="display: flex; align-items: center; gap: var(--spacing-3);">
+          <span class="text-muted" style="font-size: 0.875rem;">
+            {{ rev.created_at.strftime('%Y-%m-%d %H:%M:%S') }}
+          </span>
+          {% if rev.before_state_json %}
+          <button class="btn btn-secondary"
+                  style="font-size: 0.75rem; padding: 4px 10px;"
+                  hx-post="/admin/api/tasks/{{ result.task.id }}/rollback/{{ rev.id }}"
+                  hx-confirm="Roll back to the state before revision #{{ rev.revision_no }}?"
+                  hx-swap="none"
+                  hx-on:htmx:after-request="if(event.detail.successful){setTimeout(function(){location.reload()},500)}">
+            Rollback to this state
+          </button>
+          {% endif %}
         </div>
       </div>
       <div style="padding: var(--spacing-4);">
@@ -271,6 +288,17 @@ function onDescSaved(form) {
                 </tr>
               </tbody>
             </table>
+            {% elif rev.action == 'rollback' %}
+            <div style="font-size: 0.875rem; color: var(--color-text-muted);">
+              Rolled back to state before revision #{{ rev.proposal_json.target_revision_no if rev.proposal_json else '?' }}
+            </div>
+            {% if rev.success is not none %}
+            <div style="margin-top: var(--spacing-2);">
+              <span class="badge" style="background-color: {% if rev.success %}var(--color-success, #22c55e){% else %}var(--color-danger, #ef4444){% endif %}; color: white; font-size: 0.7rem;">
+                {{ 'Success' if rev.success else 'Failed' }}
+              </span>
+            </div>
+            {% endif %}
             {% else %}
             <div class="text-muted" style="font-style: italic; font-size: 0.875rem;">
               Pending user decision...
@@ -278,6 +306,26 @@ function onDescSaved(form) {
             {% endif %}
           </div>
         </div>
+        {% if rev.before_state_json or rev.after_state_json %}
+        <div style="margin-top: var(--spacing-4); display: grid; grid-template-columns: 1fr 1fr; gap: var(--spacing-4);">
+          {% if rev.before_state_json %}
+          <div>
+            <h4 style="font-size: 0.75rem; font-weight: 600; color: var(--color-text-muted); text-transform: uppercase; margin-bottom: var(--spacing-2);">
+              Before State
+            </h4>
+            <pre style="background-color: var(--color-background); padding: var(--spacing-3); border-radius: 4px; border: 1px solid var(--color-border); font-family: var(--font-mono); font-size: 0.75rem; white-space: pre-wrap; word-break: break-word; max-height: 200px; overflow-y: auto;">{{ rev.before_state_json | tojson(indent=2) }}</pre>
+          </div>
+          {% endif %}
+          {% if rev.after_state_json %}
+          <div>
+            <h4 style="font-size: 0.75rem; font-weight: 600; color: var(--color-text-muted); text-transform: uppercase; margin-bottom: var(--spacing-2);">
+              After State
+            </h4>
+            <pre style="background-color: var(--color-background); padding: var(--spacing-3); border-radius: 4px; border: 1px solid var(--color-border); font-family: var(--font-mono); font-size: 0.75rem; white-space: pre-wrap; word-break: break-word; max-height: 200px; overflow-y: auto;">{{ rev.after_state_json | tojson(indent=2) }}</pre>
+          </div>
+          {% endif %}
+        </div>
+        {% endif %}
       </div>
     </div>
     {% endfor %}
