@@ -25,6 +25,7 @@ class GoogleTask:
     tasklist_id: str
     due: str | None = None
     updated: str | None = None
+    raw_payload: dict | None = None
 
 
 class GoogleTasksService:
@@ -39,9 +40,7 @@ class GoogleTasksService:
             from googleapiclient.discovery import build
 
             if not os.path.exists(self._credentials_file):
-                raise GoogleTasksError(
-                    f"Credentials file not found: {self._credentials_file}"
-                )
+                raise GoogleTasksError(f"Credentials file not found: {self._credentials_file}")
 
             with open(self._credentials_file) as f:
                 cred_data = json.load(f)
@@ -127,12 +126,7 @@ class GoogleTasksService:
 
     def get_task(self, tasklist_id: str, task_id: str) -> GoogleTask | None:
         try:
-            item = (
-                self._get_service()
-                .tasks()
-                .get(tasklist=tasklist_id, task=task_id)
-                .execute()
-            )
+            item = self._get_service().tasks().get(tasklist=tasklist_id, task=task_id).execute()
             return GoogleTask(
                 id=item["id"],
                 title=item.get("title", "").strip(),
@@ -190,9 +184,7 @@ class GoogleTasksService:
         try:
             original = self.get_task(source_tasklist_id, task_id)
             if original is None:
-                raise GoogleTasksError(
-                    f"Task {task_id} not found in {source_tasklist_id}"
-                )
+                raise GoogleTasksError(f"Task {task_id} not found in {source_tasklist_id}")
 
             new_task_body: dict = {"title": original.title}
             if original.notes:
@@ -208,9 +200,7 @@ class GoogleTasksService:
             )
 
             # Delete from source
-            self._get_service().tasks().delete(
-                tasklist=source_tasklist_id, task=task_id
-            ).execute()
+            self._get_service().tasks().delete(tasklist=source_tasklist_id, task=task_id).execute()
 
             return GoogleTask(
                 id=created["id"],
