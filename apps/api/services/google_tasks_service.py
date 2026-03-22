@@ -73,35 +73,52 @@ class GoogleTasksService:
 
     def list_tasklists(self) -> list[dict]:
         try:
-            result = self._get_service().tasklists().list().execute()
-            return result.get("items", [])
+            items = []
+            page_token = None
+            while True:
+                kwargs: dict = dict(maxResults=100)
+                if page_token:
+                    kwargs["pageToken"] = page_token
+                result = self._get_service().tasklists().list(**kwargs).execute()
+                items.extend(result.get("items", []))
+                page_token = result.get("nextPageToken")
+                if not page_token:
+                    break
+            return items
         except Exception as e:
             raise GoogleTasksError(f"Failed to list tasklists: {e}") from e
 
     def list_tasks(self, tasklist_id: str) -> list[GoogleTask]:
         try:
-            result = (
-                self._get_service()
-                .tasks()
-                .list(tasklist=tasklist_id, showCompleted=False, showHidden=False)
-                .execute()
-            )
-            items = result.get("items", [])
             tasks = []
-            for item in items:
-                if item.get("status") == "completed":
-                    continue
-                tasks.append(
-                    GoogleTask(
-                        id=item["id"],
-                        title=item.get("title", "").strip(),
-                        notes=item.get("notes"),
-                        status=item.get("status", "needsAction"),
-                        tasklist_id=tasklist_id,
-                        due=item.get("due"),
-                        updated=item.get("updated"),
-                    )
+            page_token = None
+            while True:
+                kwargs: dict = dict(
+                    tasklist=tasklist_id,
+                    showCompleted=False,
+                    showHidden=False,
+                    maxResults=100,
                 )
+                if page_token:
+                    kwargs["pageToken"] = page_token
+                result = self._get_service().tasks().list(**kwargs).execute()
+                for item in result.get("items", []):
+                    if item.get("status") == "completed":
+                        continue
+                    tasks.append(
+                        GoogleTask(
+                            id=item["id"],
+                            title=item.get("title", "").strip(),
+                            notes=item.get("notes"),
+                            status=item.get("status", "needsAction"),
+                            tasklist_id=tasklist_id,
+                            due=item.get("due"),
+                            updated=item.get("updated"),
+                        )
+                    )
+                page_token = result.get("nextPageToken")
+                if not page_token:
+                    break
             return tasks
         except GoogleTasksError:
             raise
