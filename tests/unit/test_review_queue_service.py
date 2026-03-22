@@ -72,14 +72,14 @@ async def test_send_next_returns_false_when_active_review_exists(
 ):
     session_repo = MagicMock()
     session_repo.has_active_review = AsyncMock(return_value=True)
-    session_repo.get_next_queued = AsyncMock()
+    session_repo.get_next_queued_for_update = AsyncMock()
     mock_session_repo_cls.return_value = session_repo
 
     result = await service.send_next()
 
     assert result is False
     session_repo.has_active_review.assert_awaited_once()
-    session_repo.get_next_queued.assert_not_called()
+    session_repo.get_next_queued_for_update.assert_not_called()
     mock_task_repo_cls.assert_not_called()
     mock_project_repo_cls.assert_not_called()
     mock_telegram.send_proposal.assert_not_called()
@@ -98,13 +98,13 @@ async def test_send_next_returns_false_when_queue_is_empty(
 ):
     session_repo = MagicMock()
     session_repo.has_active_review = AsyncMock(return_value=False)
-    session_repo.get_next_queued = AsyncMock(return_value=None)
+    session_repo.get_next_queued_for_update = AsyncMock(return_value=None)
     mock_session_repo_cls.return_value = session_repo
 
     result = await service.send_next()
 
     assert result is False
-    session_repo.get_next_queued.assert_awaited_once()
+    session_repo.get_next_queued_for_update.assert_awaited_once()
     mock_task_repo_cls.assert_not_called()
     mock_project_repo_cls.assert_not_called()
     mock_telegram.send_proposal.assert_not_called()
@@ -128,7 +128,7 @@ async def test_send_next_sends_next_queued_item_and_updates_session(
 
     session_repo = MagicMock()
     session_repo.has_active_review = AsyncMock(return_value=False)
-    session_repo.get_next_queued = AsyncMock(return_value=queued_session)
+    session_repo.get_next_queued_for_update = AsyncMock(return_value=queued_session)
     session_repo.save = AsyncMock()
     session_repo.count_queued = AsyncMock(return_value=0)
     mock_session_repo_cls.return_value = session_repo
@@ -173,7 +173,9 @@ async def test_send_next_marks_missing_task_resolved_then_recurses(
 
     session_repo = MagicMock()
     session_repo.has_active_review = AsyncMock(side_effect=[False, False])
-    session_repo.get_next_queued = AsyncMock(side_effect=[missing_session, valid_session])
+    session_repo.get_next_queued_for_update = AsyncMock(
+        side_effect=[missing_session, valid_session]
+    )
     session_repo.save = AsyncMock()
     session_repo.count_queued = AsyncMock(return_value=0)
     mock_session_repo_cls.return_value = session_repo
@@ -213,7 +215,7 @@ async def test_send_next_sends_remaining_queue_notification(
 
     session_repo = MagicMock()
     session_repo.has_active_review = AsyncMock(return_value=False)
-    session_repo.get_next_queued = AsyncMock(return_value=queued_session)
+    session_repo.get_next_queued_for_update = AsyncMock(return_value=queued_session)
     session_repo.save = AsyncMock()
     session_repo.count_queued = AsyncMock(return_value=3)
     mock_session_repo_cls.return_value = session_repo
