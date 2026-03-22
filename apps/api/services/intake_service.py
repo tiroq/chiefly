@@ -76,11 +76,17 @@ class IntakeService:
         idempotency = IdempotencyService(self._session)
         settings = get_settings()
 
-        # Idempotency: skip if already processed
+        # Idempotency: skip if already processed; re-classify if still NEW (LLM may have been
+        # cancelled on a previous poll before classification completed).
         existing = await task_repo.get_by_source_google_task_id(gtask.id)
         if existing is not None:
-            logger.debug("task_already_exists", google_task_id=gtask.id)
-            return False
+            if existing.status != TaskStatus.NEW:
+                logger.debug("task_already_exists", google_task_id=gtask.id)
+                return False
+            # Task exists but was never classified — continue with classification below
+            task_item = existing
+        else:
+            task_item = None
 
         lock_key = f"intake:{gtask.id}"
         try:
@@ -94,26 +100,28 @@ class IntakeService:
             if gtask.notes:
                 raw_text = f"{raw_text}\n{gtask.notes}"
 
-            # Create TaskItem
-            task_item = TaskItem(
-                id=uuid.uuid4(),
-                source_google_task_id=gtask.id,
-                source_google_tasklist_id=inbox_list_id,
-                current_google_task_id=gtask.id,
-                current_google_tasklist_id=inbox_list_id,
-                raw_text=raw_text,
-                status=TaskStatus.NEW,
-            )
-            task_item = await task_repo.create(task_item)
-            # Note: no early commit here — the full pipeline runs in one transaction.
-            # If anything fails, rollback will undo the task creation too, allowing
-            # re-processing on the next poll.
+            if task_item is None:
+                # Create TaskItem
+                task_item = TaskItem(
+                    id=uuid.uuid4(),
+                    source_google_task_id=gtask.id,
+                    source_google_tasklist_id=inbox_list_id,
+                    current_google_task_id=gtask.id,
+                    current_google_tasklist_id=inbox_list_id,
+                    raw_text=raw_text,
+                    status=TaskStatus.NEW,
+                )
+                task_item = await task_repo.create(task_item)
+                # Commit task creation early so the task is persisted even if the LLM
+                # call is cancelled (e.g. hot reload). The idempotency check above
+                # will retry classification on the next poll for NEW status tasks.
+                await self._session.commit()
 
-            logger.info(
-                "task_item_created",
-                task_item_id=str(task_item.id),
-                source_google_task_id=gtask.id,
-            )
+                logger.info(
+                    "task_item_created",
+                    task_item_id=str(task_item.id),
+                    source_google_task_id=gtask.id,
+                )
 
             # Classify
             projects = await project_repo.list_active()
@@ -129,6 +137,7 @@ class IntakeService:
             task_item.llm_model = settings.llm_model
             task_item.status = transition(TaskStatus.NEW, TaskStatus.PROPOSED)
             await task_repo.save(task_item)
+            await self._session.commit()  # persist LLM classification immediately
 
             # Create revision
             await revision_service.create_classification_revision(
@@ -146,8 +155,7 @@ class IntakeService:
                 status="queued",
             )
             await session_repo.create(review_session)
-
-            await self._session.commit()
+            await self._session.commit()  # persist review session
 
             from importlib import import_module
 
