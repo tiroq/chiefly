@@ -1,0 +1,160 @@
+import uuid
+from datetime import datetime, timezone
+
+from sqlalchemy import func, select, update
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from core.domain.enums import ProcessingReason, ProcessingStatus
+from db.models.task_processing_queue import TaskProcessingQueue
+
+
+class ProcessingQueueRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def enqueue(
+        self,
+        source_task_id: uuid.UUID,
+        reason: ProcessingReason,
+        task_item_id: uuid.UUID | None = None,
+    ) -> TaskProcessingQueue:
+        entry = TaskProcessingQueue(
+            id=uuid.uuid4(),
+            source_task_id=source_task_id,
+            task_item_id=task_item_id,
+            processing_status=ProcessingStatus.PENDING,
+            processing_reason=reason,
+        )
+        self._session.add(entry)
+        await self._session.flush()
+        return entry
+
+    async def claim_next(self, locked_by: str = "processing_worker") -> TaskProcessingQueue | None:
+        """
+        Atomically claim the next pending queue entry using SELECT FOR UPDATE SKIP LOCKED.
+        Implements latest-only: skips older entries if newer exists for same source_task_id.
+        """
+        stmt = (
+            select(TaskProcessingQueue)
+            .where(TaskProcessingQueue.processing_status == ProcessingStatus.PENDING)
+            .order_by(TaskProcessingQueue.created_at.asc())
+            .limit(1)
+            .with_for_update(skip_locked=True)
+        )
+        result = await self._session.execute(stmt)
+        entry = result.scalar_one_or_none()
+
+        if entry is None:
+            return None
+
+        # Latest-only: check if there's a newer pending entry for the same source_task
+        newer_check = await self._session.execute(
+            select(func.count(TaskProcessingQueue.id)).where(
+                TaskProcessingQueue.source_task_id == entry.source_task_id,
+                TaskProcessingQueue.processing_status == ProcessingStatus.PENDING,
+                TaskProcessingQueue.created_at > entry.created_at,
+            )
+        )
+        has_newer = (newer_check.scalar() or 0) > 0
+
+        if has_newer:
+            entry.processing_status = ProcessingStatus.SKIPPED
+            entry.completed_at = datetime.now(tz=timezone.utc)
+            self._session.add(entry)
+            await self._session.flush()
+            return await self.claim_next(locked_by=locked_by)
+
+        now = datetime.now(tz=timezone.utc)
+        entry.processing_status = ProcessingStatus.LOCKED
+        entry.locked_at = now
+        entry.locked_by = locked_by
+        self._session.add(entry)
+        await self._session.flush()
+        return entry
+
+    async def mark_processing(self, entry_id: uuid.UUID, content_hash: str) -> None:
+        await self._session.execute(
+            update(TaskProcessingQueue)
+            .where(TaskProcessingQueue.id == entry_id)
+            .values(
+                processing_status=ProcessingStatus.PROCESSING,
+                content_hash_at_processing=content_hash,
+                updated_at=datetime.now(tz=timezone.utc),
+            )
+        )
+        await self._session.flush()
+
+    async def complete(self, entry_id: uuid.UUID, task_item_id: uuid.UUID | None = None) -> None:
+        now = datetime.now(tz=timezone.utc)
+        values: dict[str, object] = {
+            "processing_status": ProcessingStatus.COMPLETED,
+            "completed_at": now,
+            "updated_at": now,
+        }
+        if task_item_id is not None:
+            values["task_item_id"] = task_item_id
+        await self._session.execute(
+            update(TaskProcessingQueue).where(TaskProcessingQueue.id == entry_id).values(**values)
+        )
+        await self._session.flush()
+
+    async def fail(self, entry_id: uuid.UUID, error_message: str) -> None:
+        result = await self._session.execute(
+            select(TaskProcessingQueue).where(TaskProcessingQueue.id == entry_id)
+        )
+        entry = result.scalar_one_or_none()
+        if entry is None:
+            return
+
+        now = datetime.now(tz=timezone.utc)
+        new_retry_count = entry.retry_count + 1
+
+        if new_retry_count >= entry.max_retries:
+            new_status = ProcessingStatus.FAILED
+        else:
+            new_status = ProcessingStatus.PENDING
+
+        await self._session.execute(
+            update(TaskProcessingQueue)
+            .where(TaskProcessingQueue.id == entry_id)
+            .values(
+                processing_status=new_status,
+                retry_count=new_retry_count,
+                error_message=error_message,
+                locked_at=None,
+                locked_by=None,
+                updated_at=now,
+            )
+        )
+        await self._session.flush()
+
+    async def get_by_id(self, entry_id: uuid.UUID) -> TaskProcessingQueue | None:
+        result = await self._session.execute(
+            select(TaskProcessingQueue).where(TaskProcessingQueue.id == entry_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def count_pending(self) -> int:
+        result = await self._session.execute(
+            select(func.count(TaskProcessingQueue.id)).where(
+                TaskProcessingQueue.processing_status == ProcessingStatus.PENDING
+            )
+        )
+        return result.scalar() or 0
+
+    async def list_pending(self, limit: int = 20) -> list[TaskProcessingQueue]:
+        result = await self._session.execute(
+            select(TaskProcessingQueue)
+            .where(TaskProcessingQueue.processing_status == ProcessingStatus.PENDING)
+            .order_by(TaskProcessingQueue.created_at.asc())
+            .limit(limit)
+        )
+        return list(result.scalars().all())
+
+    async def list_by_source_task(self, source_task_id: uuid.UUID) -> list[TaskProcessingQueue]:
+        result = await self._session.execute(
+            select(TaskProcessingQueue)
+            .where(TaskProcessingQueue.source_task_id == source_task_id)
+            .order_by(TaskProcessingQueue.created_at.desc())
+        )
+        return list(result.scalars().all())
