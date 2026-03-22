@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     llm_base_url: str = ""
 
     inbox_poll_interval_seconds: int = 60
+    processing_interval_seconds: int = 10
     daily_review_cron: str = "0 9 * * *"
     project_sync_cron: str = "0 * * * *"
     timezone: str = "UTC"

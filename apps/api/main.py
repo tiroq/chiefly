@@ -19,7 +19,9 @@ from apps.api.admin.auth import create_login_router, htmx_exception_handler
 from apps.api.services.scheduler_service import setup_scheduler
 from apps.api.workers.daily_review_worker import run_daily_review
 from apps.api.workers.inbox_poll_worker import run_inbox_poll
+from apps.api.workers.processing_worker import run_processing
 from apps.api.workers.project_sync_worker import run_project_sync
+from apps.api.workers.sync_worker import run_sync
 
 logger = get_logger(__name__)
 
@@ -621,10 +623,12 @@ async def lifespan(app: FastAPI):
     # Set up scheduler
     scheduler = setup_scheduler(
         poll_interval_seconds=settings.inbox_poll_interval_seconds,
+        processing_interval_seconds=settings.processing_interval_seconds,
         daily_review_cron=settings.daily_review_cron,
         project_sync_cron=settings.project_sync_cron,
         timezone=settings.timezone,
-        poll_job=run_inbox_poll,
+        poll_job=run_sync,
+        processing_job=run_processing,
         review_job=run_daily_review,
         project_sync_job=run_project_sync,
     )
