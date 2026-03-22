@@ -5,8 +5,9 @@ Admin action API routes for task management: retry, re-classify, re-send.
 import uuid
 
 import structlog
-from fastapi import APIRouter, Depends, Form, HTTPException
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import JSONResponse
+from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.admin.auth import require_admin
@@ -29,7 +30,11 @@ from db.repositories.system_event_repo import SystemEventRepo
 from db.repositories.task_item_repo import TaskItemRepository
 from db.repositories.task_revision_repo import TaskRevisionRepository
 
+from apps.api.services.admin_tasks_service import AdminTasksService
+
 logger = structlog.get_logger(__name__)
+
+templates = Jinja2Templates(directory="apps/api/templates")
 
 settings = get_settings()
 router = APIRouter(
@@ -290,8 +295,9 @@ async def rewrite_task_title(
 
 @router.post("/import-from-google")
 async def import_tasks_from_google(
+    request: Request,
     session: AsyncSession = Depends(get_session),
-) -> JSONResponse:
+):
     """Import existing tasks from all active project Google Task lists into the DB."""
     try:
         google_svc = GoogleTasksService(settings.google_credentials_file)
@@ -346,9 +352,22 @@ async def import_tasks_from_google(
             f"Imported {imported} tasks from Google Tasks ({skipped} already existed)",
         )
 
+        # Return updated task table HTML so HTMX can swap it directly
+        from core.domain.enums import TaskKind, TaskStatus as TS
+        from db.repositories.task_revision_repo import TaskRevisionRepository as TRR
+        svc = AdminTasksService(task_repo, TRR(session))
+        result = await svc.list_tasks(session=session)
+        active_projects = await project_repo.list_active()
         msg = f"Imported {imported} task(s). {skipped} already in DB."
-        return JSONResponse(
-            content={"success": True, "imported": imported, "skipped": skipped},
+        return templates.TemplateResponse(
+            "admin/partials/_task_table.html",
+            {
+                "request": request,
+                "result": result,
+                "projects": active_projects,
+                "statuses": [s.value for s in TS],
+                "kinds": [k.value for k in TaskKind],
+            },
             headers={"HX-Trigger": f'{{"showToast": "{msg}"}}'},
         )
     except Exception as exc:

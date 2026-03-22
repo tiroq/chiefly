@@ -19,6 +19,7 @@ from apps.api.services.project_sync_service import ProjectSyncService
 from apps.api.services.prompt_versioning_service import PromptVersioningService
 from apps.api.services.system_event_service import SystemEventService
 from db.models.project_alias import ProjectAlias
+from db.models.project_prompt_version import ProjectPromptVersion
 from db.repositories.project_alias_repo import ProjectAliasRepo
 from db.repositories.project_repo import ProjectRepository
 from db.repositories.prompt_version_repo import ProjectPromptVersionRepo
@@ -384,6 +385,113 @@ async def view_prompt_version(
     }
     
     return templates.TemplateResponse("admin/partials/_prompt_detail_modal.html", context)
+
+
+@router.get("/projects/{project_id}/prompts/{version_id}/edit")
+async def edit_prompt_version(
+    request: Request,
+    project_id: uuid.UUID,
+    version_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+):
+    """Load prompt version for editing in a modal form."""
+    version_repo = ProjectPromptVersionRepo(session)
+    version = await version_repo.get_by_id(version_id)
+    
+    if version is None:
+        raise HTTPException(status_code=404, detail="Prompt version not found")
+    
+    context = {
+        "request": request,
+        "version": version,
+        "project_id": project_id,
+    }
+    
+    return templates.TemplateResponse("admin/partials/_prompt_edit_modal.html", context)
+
+
+@router.post("/projects/{project_id}/prompts/{version_id}/edit")
+async def save_edited_prompt_version(
+    request: Request,
+    project_id: uuid.UUID,
+    version_id: uuid.UUID,
+    title: str = Form(None),
+    description_text: str = Form(None),
+    classification_prompt_text: str = Form(None),
+    routing_prompt_text: str = Form(None),
+    examples_json: str = Form(None),
+    change_note: str = Form(None),
+    session: AsyncSession = Depends(get_session),
+):
+    """Save edited prompt version as a new version."""
+    version_repo = ProjectPromptVersionRepo(session)
+    event_repo = SystemEventRepo(session)
+    prompt_svc = PromptVersioningService(version_repo, event_repo)
+    
+    # Get the original version
+    original_version = await version_repo.get_by_id(version_id)
+    if original_version is None:
+        raise HTTPException(status_code=404, detail="Prompt version not found")
+    
+    # Check if original was active
+    was_active = original_version.is_active
+    
+    # Parse examples JSON
+    parsed_examples = None
+    if examples_json:
+        try:
+            parsed_examples = json.loads(examples_json)
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="Invalid JSON in examples")
+    
+    # Create new version with incremented version_no
+    # If original was active, new version will be active and original deactivated
+    # If original was inactive, new version will be inactive
+    if was_active:
+        # Deactivate the old version first
+        original_version.is_active = False
+        await version_repo.save(original_version)
+        
+        # Create new version as active
+        new_version = await prompt_svc.create_version(
+            session,
+            project_id,
+            title=title,
+            description_text=description_text,
+            classification_prompt_text=classification_prompt_text,
+            routing_prompt_text=routing_prompt_text,
+            examples_json=parsed_examples,
+            created_by=None,  # Optional: could extract from user context
+            change_note=change_note,
+        )
+    else:
+        # Create new version but keep it inactive
+        next_no = await version_repo.get_next_version_no(project_id)
+        new_version = ProjectPromptVersion(
+            id=uuid.uuid4(),
+            project_id=project_id,
+            version_no=next_no,
+            title=title,
+            description_text=description_text,
+            classification_prompt_text=classification_prompt_text,
+            routing_prompt_text=routing_prompt_text,
+            examples_json=parsed_examples,
+            is_active=False,  # Keep it inactive
+            created_by=None,
+            change_note=change_note,
+        )
+        await version_repo.create(new_version)
+    
+    await session.commit()
+    
+    if is_htmx(request):
+        return Response(
+            status_code=200,
+            headers={"HX-Redirect": f"/admin/projects/{project_id}?msg=Prompt+version+updated"},
+        )
+    return RedirectResponse(
+        f"/admin/projects/{project_id}?msg=Prompt+version+updated", status_code=303
+    )
 
 
 @router.post("/projects/{project_id}/aliases")
