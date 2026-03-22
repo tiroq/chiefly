@@ -15,7 +15,14 @@ tasks:
   dev:
     desc: Start the API server with hot reload
     cmds:
-      - .venv/bin/uvicorn apps.api.main:app --reload --host 0.0.0.0 --port 8000
+      - .venv/bin/uvicorn apps.api.main:app --reload --reload-dir apps --reload-dir core --reload-dir db --host 0.0.0.0 --port 8000 --log-level debug
+    dotenv: [".env"]
+
+  dev:debug:
+    desc: Start the API server with hot reload and verbose debug logging
+    cmds:
+      - .venv/bin/uvicorn apps.api.main:app --reload --reload-dir apps --reload-dir core --reload-dir db --host 0.0.0.0 --port 8000 --log-level debug --access-log
+    dotenv: [".env"]
 
   test:
     desc: Run all tests
@@ -97,3 +104,24 @@ tasks:
       - docker compose -f infra/docker/docker-compose.yml down -v
       - docker compose -f infra/docker/docker-compose.yml build --no-cache
       - docker compose -f infra/docker/docker-compose.yml up -d
+
+  docker:dev:
+    desc: Start Docker services with hot reload development mode
+    cmds:
+      - docker compose -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.dev.yml up -d
+
+  docker:dev:stop:
+    desc: Stop Docker development services
+    cmds:
+      - docker compose -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.dev.yml down
+
+  docker:dev:logs:
+    desc: Tail Docker development service logs
+    cmds:
+      - docker compose -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.dev.yml logs -f
+
+  docker:dev:rebuild:
+    desc: Rebuild and restart Docker dev services with hot reload
+    cmds:
+      - docker compose -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.dev.yml build --no-cache api migrate
+      - docker compose -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.dev.yml up -d --force-recreate api
