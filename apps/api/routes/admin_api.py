@@ -31,6 +31,9 @@ from db.repositories.task_item_repo import TaskItemRepository
 from db.repositories.task_revision_repo import TaskRevisionRepository
 
 from apps.api.services.admin_tasks_service import AdminTasksService
+from core.domain.enums import ProcessingReason, ProcessingStatus
+from db.repositories.processing_queue_repo import ProcessingQueueRepository
+from db.repositories.source_task_repo import SourceTaskRepository
 
 logger = structlog.get_logger(__name__)
 
@@ -355,6 +358,7 @@ async def import_tasks_from_google(
         # Return updated task table HTML so HTMX can swap it directly
         from core.domain.enums import TaskKind, TaskStatus as TS
         from db.repositories.task_revision_repo import TaskRevisionRepository as TRR
+
         svc = AdminTasksService(task_repo, TRR(session))
         result = await svc.list_tasks(session=session)
         active_projects = await project_repo.list_active()
@@ -434,9 +438,7 @@ async def edit_task(
                     task.current_google_task_id = moved.id
                     task.current_google_tasklist_id = moved.tasklist_id
                     if task.normalized_title and task.normalized_title != task.raw_text:
-                        gtasks.patch_task(
-                            moved.tasklist_id, moved.id, title=task.normalized_title
-                        )
+                        gtasks.patch_task(moved.tasklist_id, moved.id, title=task.normalized_title)
                 except Exception as exc:
                     logger.warning("google_tasks_move_failed", task_id=str(task_id), error=str(exc))
 
@@ -463,3 +465,74 @@ async def edit_task(
             status_code=500,
             content={"error": f"Failed to edit task: {exc}"},
         )
+
+
+@router.get("/processing/queue")
+async def get_processing_queue(
+    session: AsyncSession = Depends(get_session),
+) -> JSONResponse:
+    queue_repo = ProcessingQueueRepository(session)
+    source_repo = SourceTaskRepository(session)
+
+    pending = await queue_repo.list_pending(limit=50)
+    items = []
+    for entry in pending:
+        source = await source_repo.get_by_id(entry.source_task_id)
+        items.append(
+            {
+                "id": str(entry.id),
+                "source_task_id": str(entry.source_task_id),
+                "title": source.title_raw if source else None,
+                "processing_status": entry.processing_status,
+                "processing_reason": entry.processing_reason,
+                "retry_count": entry.retry_count,
+                "max_retries": entry.max_retries,
+                "error_message": entry.error_message,
+                "created_at": entry.created_at.isoformat() if entry.created_at else None,
+            }
+        )
+
+    total_pending = await queue_repo.count_pending()
+
+    return JSONResponse(
+        content={
+            "total_pending": total_pending,
+            "items": items,
+        }
+    )
+
+
+@router.post("/processing/reprocess/{source_task_id}")
+async def reprocess_source_task(
+    source_task_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+) -> JSONResponse:
+    source_repo = SourceTaskRepository(session)
+    source = await source_repo.get_by_id(source_task_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail="Source task not found")
+
+    queue_repo = ProcessingQueueRepository(session)
+
+    existing_task_repo = TaskItemRepository(session)
+    existing_task = await existing_task_repo.get_by_source_google_task_id(source.google_task_id)
+    task_item_id = existing_task.id if existing_task else None
+
+    await queue_repo.enqueue(
+        source_task_id=source.id,
+        reason=ProcessingReason.MANUAL_REPROCESS,
+        task_item_id=task_item_id,
+    )
+    await session.commit()
+
+    event_svc = SystemEventService(SystemEventRepo(session))
+    await event_svc.log_admin_action(
+        session,
+        "manual_reprocess",
+        f"Source task {source_task_id} queued for reprocessing",
+    )
+
+    return JSONResponse(
+        content={"success": True, "message": "Queued for reprocessing"},
+        headers={"HX-Trigger": '{"showToast": "Queued for reprocessing"}'},
+    )
