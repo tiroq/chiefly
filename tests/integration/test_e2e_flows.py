@@ -1,3 +1,4 @@
+# pyright: reportArgumentType=false, reportOptionalMemberAccess=false
 """
 End-to-end service-level tests for complete product flows.
 Tests the full lifecycle with mocked external services.
@@ -15,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from core.domain.enums import ConfidenceBand, ProjectType, ReviewAction, TaskKind, TaskStatus
 from core.domain.state_machine import transition
-from core.schemas.llm import TaskClassificationResult
+from core.schemas.llm import PipelineResult, TaskClassificationResult
 from db.base import Base
 from db.models import Project, TaskItem, TelegramReviewSession
 
@@ -67,15 +68,13 @@ async def seeded_session(db_session):
 
 @pytest.fixture
 def classification_result():
-    return TaskClassificationResult(
-        kind=TaskKind.WAITING,
-        normalized_title="Wait for Alex to send certificates",
-        project_guess="NFT Gateway",
-        project_confidence=ConfidenceBand.HIGH,
+    return PipelineResult(
+        type=TaskKind.WAITING,
+        title="Wait for Alex to send certificates",
+        project="NFT Gateway",
         next_action="Prepare follow-up message",
         confidence=ConfidenceBand.HIGH,
-        substeps=["Draft email", "Set reminder"],
-        ambiguities=[],
+        steps=["Draft email", "Set reminder"],
     )
 
 
@@ -117,7 +116,7 @@ class TestE2EHappyPath:
         mock_google.list_tasks.return_value = [google_task]
 
         mock_llm = AsyncMock(spec=LLMService)
-        mock_llm.classify_task.return_value = classification_result
+        mock_llm.run_pipeline.return_value = classification_result
 
         mock_tg = AsyncMock(spec=TelegramService)
         mock_tg.send_proposal.return_value = 42
@@ -228,7 +227,7 @@ class TestE2EDiscardPath:
         mock_google = MagicMock(spec=GoogleTasksService)
         mock_google.list_tasks.return_value = [google_task]
         mock_llm = AsyncMock(spec=LLMService)
-        mock_llm.classify_task.return_value = classification_result
+        mock_llm.run_pipeline.return_value = classification_result
         mock_tg = AsyncMock(spec=TelegramService)
         mock_tg.send_proposal.return_value = 55
         routing = ProjectRoutingService()
@@ -311,7 +310,7 @@ class TestE2EEditThenConfirm:
         mock_google = MagicMock(spec=GoogleTasksService)
         mock_google.list_tasks.return_value = [google_task]
         mock_llm = AsyncMock(spec=LLMService)
-        mock_llm.classify_task.return_value = classification_result
+        mock_llm.run_pipeline.return_value = classification_result
         mock_tg = AsyncMock(spec=TelegramService)
         mock_tg.send_proposal.return_value = 77
         routing = ProjectRoutingService()
@@ -416,7 +415,7 @@ class TestE2EDuplicatePoll:
         mock_google = MagicMock(spec=GoogleTasksService)
         mock_google.list_tasks.return_value = [google_task]
         mock_llm = AsyncMock(spec=LLMService)
-        mock_llm.classify_task.return_value = classification_result
+        mock_llm.run_pipeline.return_value = classification_result
         mock_tg = AsyncMock(spec=TelegramService)
         mock_tg.send_proposal.return_value = 88
         routing = ProjectRoutingService()
@@ -444,7 +443,7 @@ class TestE2EDuplicatePoll:
         # Only one proposal sent
         mock_tg.send_proposal.assert_called_once()
         # LLM only called once
-        mock_llm.classify_task.assert_called_once()
+        mock_llm.run_pipeline.assert_called_once()
 
         # Only one task in DB
         task_repo = TaskItemRepository(seeded_session)
@@ -483,7 +482,7 @@ class TestE2EMultipleInboxItems:
         mock_google = MagicMock(spec=GoogleTasksService)
         mock_google.list_tasks.return_value = tasks
         mock_llm = AsyncMock(spec=LLMService)
-        mock_llm.classify_task.return_value = classification_result
+        mock_llm.run_pipeline.return_value = classification_result
         mock_tg = AsyncMock(spec=TelegramService)
         mock_tg.send_proposal.return_value = 99
         routing = ProjectRoutingService()
@@ -506,7 +505,7 @@ class TestE2EMultipleInboxItems:
         # With the review queue, only the first item is sent to Telegram immediately;
         # the remaining items stay queued until the active review is resolved.
         assert mock_tg.send_proposal.call_count == 1
-        assert mock_llm.classify_task.call_count == 3
+        assert mock_llm.run_pipeline.call_count == 3
 
         task_repo = TaskItemRepository(seeded_session)
         for i in range(3):

@@ -15,7 +15,7 @@ import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from core.domain.enums import ConfidenceBand, ProjectType, TaskKind, TaskStatus
-from core.schemas.llm import TaskClassificationResult
+from core.schemas.llm import PipelineResult
 from db.base import Base
 from db.models import Project, TaskItem
 
@@ -67,21 +67,20 @@ async def seeded_session(db_session):
 
 @pytest.fixture
 def classification_result():
-    return TaskClassificationResult(
-        kind=TaskKind.WAITING,
-        normalized_title="Wait for Alex to send certificates",
-        project_guess="NFT Gateway",
-        project_confidence=ConfidenceBand.HIGH,
+    return PipelineResult(
+        type=TaskKind.WAITING,
+        title="Wait for Alex to send certificates",
+        project="NFT Gateway",
         next_action="Prepare follow-up message",
         confidence=ConfidenceBand.HIGH,
-        substeps=[],
-        ambiguities=[],
+        steps=[],
     )
 
 
 @pytest.fixture
 def google_task():
     from apps.api.services.google_tasks_service import GoogleTask
+
     return GoogleTask(
         id="gtask-001",
         title="жду от alex сертификаты",
@@ -106,7 +105,7 @@ async def test_intake_creates_task_item(seeded_session, google_task, classificat
     mock_google.list_tasks.return_value = [google_task]
 
     mock_llm = AsyncMock(spec=LLMService)
-    mock_llm.classify_task.return_value = classification_result
+    mock_llm.run_pipeline.return_value = classification_result
 
     mock_tg = AsyncMock(spec=TelegramService)
     mock_tg.send_proposal.return_value = 42
@@ -153,7 +152,7 @@ async def test_intake_is_idempotent(seeded_session, google_task, classification_
     mock_google.list_tasks.return_value = [google_task]
 
     mock_llm = AsyncMock(spec=LLMService)
-    mock_llm.classify_task.return_value = classification_result
+    mock_llm.run_pipeline.return_value = classification_result
 
     mock_tg = AsyncMock(spec=TelegramService)
     mock_tg.send_proposal.return_value = 42

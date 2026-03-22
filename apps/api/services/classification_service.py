@@ -1,7 +1,3 @@
-"""
-Classification service - wraps LLM service and handles the classification pipeline.
-"""
-
 from __future__ import annotations
 
 import uuid
@@ -9,7 +5,8 @@ import uuid
 from apps.api.logging import get_logger
 from apps.api.services.llm_service import LLMService
 from apps.api.services.project_routing_service import ProjectRoutingService
-from core.schemas.llm import TaskClassificationResult
+from core.domain.enums import ConfidenceBand
+from core.schemas.llm import PipelineResult, TaskClassificationResult
 from db.models.project import Project
 from db.repositories.project_alias_repo import ProjectAliasRepo
 from db.repositories.prompt_version_repo import ProjectPromptVersionRepo
@@ -74,69 +71,114 @@ class ClassificationService:
 
         return "\n".join(lines)
 
+    async def _get_custom_instructions(
+        self,
+        project: Project | None,
+    ) -> str | None:
+        if project is None or self._prompt_version_repo is None:
+            return None
+        active_versions = await self._prompt_version_repo.get_all_active()
+        for version in active_versions:
+            if version.project_id == project.id:
+                return getattr(version, "prompt_text", None) or getattr(
+                    version, "classification_prompt_text", None
+                )
+        return None
+
+    async def _get_routing_aliases(self) -> dict[str, uuid.UUID]:
+        if self._alias_repo is not None:
+            return await self._alias_repo.get_all_aliases_map()
+        return {}
+
+    def _route_project(
+        self,
+        raw_text: str,
+        project_guess: str | None,
+        project_confidence: ConfidenceBand,
+        available_projects: list[Project],
+        routing_aliases: dict[str, uuid.UUID],
+    ) -> tuple[Project | None, ConfidenceBand]:
+        return self._routing.route(
+            raw_text=raw_text,
+            llm_project_guess=project_guess,
+            llm_project_confidence=project_confidence,
+            available_projects=available_projects,
+            aliases=routing_aliases,
+        )
+
+    async def classify_pipeline(
+        self,
+        raw_text: str,
+        available_projects: list[Project],
+        include_description: bool = False,
+        include_steps: bool = False,
+    ) -> tuple[PipelineResult, Project | None]:
+        routing_aliases = await self._get_routing_aliases()
+        project_context = await self._build_project_context(available_projects)
+
+        default_project_name = "Personal"
+        for p in available_projects:
+            if p.slug == "personal":
+                default_project_name = p.name
+                break
+
+        pipeline_result = await self._llm.run_pipeline(
+            raw_text=raw_text,
+            project_context=project_context,
+            include_description=include_description,
+            include_steps=include_steps,
+            project_fallback=default_project_name,
+        )
+
+        project, confidence = self._route_project(
+            raw_text=raw_text,
+            project_guess=pipeline_result.project,
+            project_confidence=pipeline_result.confidence,
+            available_projects=available_projects,
+            routing_aliases=routing_aliases,
+        )
+
+        if project is not None:
+            custom_instructions = await self._get_custom_instructions(project)
+            if custom_instructions is not None:
+                pipeline_result = await self._llm.run_pipeline(
+                    raw_text=raw_text,
+                    project_context=project_context,
+                    custom_instructions=custom_instructions,
+                    include_description=include_description,
+                    include_steps=include_steps,
+                    project_fallback=default_project_name,
+                )
+                project, confidence = self._route_project(
+                    raw_text=raw_text,
+                    project_guess=pipeline_result.project,
+                    project_confidence=pipeline_result.confidence,
+                    available_projects=available_projects,
+                    routing_aliases=routing_aliases,
+                )
+
+        pipeline_result = pipeline_result.model_copy(update={"confidence": confidence})
+
+        logger.info(
+            "pipeline_classification_complete",
+            type=pipeline_result.type,
+            project=project.name if project else None,
+            confidence=pipeline_result.confidence,
+        )
+
+        return pipeline_result, project
+
     async def classify(
         self,
         raw_text: str,
         available_projects: list[Project],
     ) -> tuple[TaskClassificationResult, Project | None]:
-        """
-        Classify raw text and route to a project.
-
-        Returns (classification_result, routed_project).
-        """
-        routing_aliases: dict[str, uuid.UUID] = {}
-        if self._alias_repo is not None:
-            routing_aliases = await self._alias_repo.get_all_aliases_map()
-        project_context = await self._build_project_context(available_projects)
-        classification = await self._llm.classify_task(
-            raw_text,
-            project_context,
-            custom_instructions=None,
-        )
-
-        if self._prompt_version_repo is not None:
-            active_prompt_versions = await self._prompt_version_repo.get_all_active()
-            active_prompt_map: dict[uuid.UUID, str] = {}
-            for version in active_prompt_versions:
-                prompt_text = getattr(version, "prompt_text", None) or getattr(
-                    version, "classification_prompt_text", None
-                )
-                if prompt_text:
-                    active_prompt_map[version.project_id] = prompt_text
-
-            if active_prompt_map:
-                matched_project, _ = self._routing.route(
-                    raw_text=raw_text,
-                    llm_project_guess=classification.project_guess,
-                    llm_project_confidence=classification.project_confidence,
-                    available_projects=available_projects,
-                    aliases=routing_aliases,
-                )
-                if matched_project is not None:
-                    custom_instructions = active_prompt_map.get(matched_project.id)
-                    if custom_instructions is not None:
-                        classification = await self._llm.classify_task(
-                            raw_text,
-                            project_context,
-                            custom_instructions=custom_instructions,
-                        )
-
-        project, confidence = self._routing.route(
+        pipeline_result, project = await self.classify_pipeline(
             raw_text=raw_text,
-            llm_project_guess=classification.project_guess,
-            llm_project_confidence=classification.project_confidence,
             available_projects=available_projects,
-            aliases=routing_aliases,
+            include_description=False,
+            include_steps=True,
         )
 
-        # Override confidence band from routing
-        classification = classification.model_copy(update={"project_confidence": confidence})
-
-        logger.info(
-            "classification_complete",
-            kind=classification.kind,
-            project=project.name if project else None,
-            confidence=classification.confidence,
-        )
-
+        classification = pipeline_result.to_legacy()
         return classification, project

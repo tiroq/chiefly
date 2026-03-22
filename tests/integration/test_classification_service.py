@@ -14,7 +14,7 @@ from apps.api.services.classification_service import ClassificationService
 from apps.api.services.llm_service import LLMService
 from apps.api.services.project_routing_service import ProjectRoutingService
 from core.domain.enums import ConfidenceBand, ProjectType, TaskKind
-from core.schemas.llm import TaskClassificationResult
+from core.schemas.llm import PipelineResult
 from db.models.project import Project
 
 
@@ -44,11 +44,10 @@ class TestClassificationService:
     @pytest.mark.asyncio
     async def test_classify_routes_to_project(self, projects):
         mock_llm = AsyncMock(spec=LLMService)
-        mock_llm.classify_task.return_value = TaskClassificationResult(
-            kind=TaskKind.TASK,
-            normalized_title="Deploy NFT contract",
-            project_guess="NFT Gateway",
-            project_confidence=ConfidenceBand.HIGH,
+        mock_llm.run_pipeline.return_value = PipelineResult(
+            type=TaskKind.TASK,
+            title="Deploy NFT contract",
+            project="NFT Gateway",
             confidence=ConfidenceBand.HIGH,
         )
         routing = ProjectRoutingService()
@@ -62,11 +61,10 @@ class TestClassificationService:
     @pytest.mark.asyncio
     async def test_classify_without_alias_repo_uses_llm_guess(self, projects):
         mock_llm = AsyncMock(spec=LLMService)
-        mock_llm.classify_task.return_value = TaskClassificationResult(
-            kind=TaskKind.TASK,
-            normalized_title="Call kids school",
-            project_guess="Personal",
-            project_confidence=ConfidenceBand.HIGH,
+        mock_llm.run_pipeline.return_value = PipelineResult(
+            type=TaskKind.TASK,
+            title="Call kids school",
+            project="Personal",
             confidence=ConfidenceBand.HIGH,
         )
         routing = ProjectRoutingService()
@@ -79,11 +77,10 @@ class TestClassificationService:
     @pytest.mark.asyncio
     async def test_classify_fallback_to_personal(self, projects):
         mock_llm = AsyncMock(spec=LLMService)
-        mock_llm.classify_task.return_value = TaskClassificationResult(
-            kind=TaskKind.TASK,
-            normalized_title="Buy milk",
-            project_guess=None,
-            project_confidence=ConfidenceBand.LOW,
+        mock_llm.run_pipeline.return_value = PipelineResult(
+            type=TaskKind.TASK,
+            title="Buy milk",
+            project="Personal",
             confidence=ConfidenceBand.MEDIUM,
         )
         routing = ProjectRoutingService()
@@ -96,9 +93,10 @@ class TestClassificationService:
     @pytest.mark.asyncio
     async def test_classify_no_projects_available(self):
         mock_llm = AsyncMock(spec=LLMService)
-        mock_llm.classify_task.return_value = TaskClassificationResult(
-            kind=TaskKind.IDEA,
-            normalized_title="New feature",
+        mock_llm.run_pipeline.return_value = PipelineResult(
+            type=TaskKind.IDEA,
+            title="New feature",
+            project="Personal",
             confidence=ConfidenceBand.LOW,
         )
         routing = ProjectRoutingService()
@@ -110,17 +108,18 @@ class TestClassificationService:
     @pytest.mark.asyncio
     async def test_classify_passes_project_context_to_llm(self, projects):
         mock_llm = AsyncMock(spec=LLMService)
-        mock_llm.classify_task.return_value = TaskClassificationResult(
-            kind=TaskKind.TASK,
-            normalized_title="Test",
+        mock_llm.run_pipeline.return_value = PipelineResult(
+            type=TaskKind.TASK,
+            title="Test",
+            project="Personal",
             confidence=ConfidenceBand.MEDIUM,
         )
         routing = ProjectRoutingService()
         svc = ClassificationService(mock_llm, routing)
 
         await svc.classify("test text", projects)
-        call_args = mock_llm.classify_task.call_args
-        project_context = call_args[0][1]  # second positional arg
+        call_args = mock_llm.run_pipeline.call_args
+        project_context = call_args.kwargs["project_context"]
         assert "Available projects:" in project_context
         assert "NFT Gateway" in project_context
         assert "Personal" in project_context
