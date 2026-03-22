@@ -404,13 +404,38 @@ async def edit_task(
         else:
             task.kind = None
 
+        new_project_id: uuid.UUID | None = None
         if project_id.strip():
             try:
-                task.project_id = uuid.UUID(project_id.strip())
+                new_project_id = uuid.UUID(project_id.strip())
             except ValueError:
                 raise HTTPException(status_code=400, detail="Invalid project_id")
-        else:
-            task.project_id = None
+
+        old_project_id = task.project_id
+        task.project_id = new_project_id
+
+        # Move task in Google Tasks if the project (tasklist) changed
+        if new_project_id != old_project_id:
+            project_repo = ProjectRepository(session)
+            new_project = await project_repo.get_by_id(new_project_id) if new_project_id else None
+            current_tasklist_id = task.current_google_tasklist_id or task.source_google_tasklist_id
+            current_task_id = task.current_google_task_id or task.source_google_task_id
+            if new_project and new_project.google_tasklist_id != current_tasklist_id:
+                try:
+                    gtasks = GoogleTasksService(settings.google_credentials_file)
+                    moved = gtasks.move_task(
+                        current_tasklist_id,
+                        current_task_id,
+                        new_project.google_tasklist_id,
+                    )
+                    task.current_google_task_id = moved.id
+                    task.current_google_tasklist_id = moved.tasklist_id
+                    if task.normalized_title and task.normalized_title != task.raw_text:
+                        gtasks.patch_task(
+                            moved.tasklist_id, moved.id, title=task.normalized_title
+                        )
+                except Exception as exc:
+                    logger.warning("google_tasks_move_failed", task_id=str(task_id), error=str(exc))
 
         await task_repo.save(task)
         await session.commit()
