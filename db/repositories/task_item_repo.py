@@ -99,3 +99,10 @@ class TaskItemRepository:
             )
         result = await self._session.execute(stmt)
         return result.scalar_one()
+
+    async def list_all(self) -> list[TaskItem]:
+        """List all tasks without filters."""
+        result = await self._session.execute(
+            select(TaskItem).order_by(TaskItem.created_at.desc())
+        )
+        return list(result.scalars().all())
