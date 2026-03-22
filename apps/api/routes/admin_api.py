@@ -382,11 +382,12 @@ async def import_tasks_from_google(
 async def edit_task(
     task_id: uuid.UUID,
     normalized_title: str = Form(""),
+    next_action: str = Form(""),
     kind: str = Form(""),
     project_id: str = Form(""),
     session: AsyncSession = Depends(get_session),
 ) -> JSONResponse:
-    """Manually edit task fields: normalized title, kind, project."""
+    """Manually edit task fields: normalized title, next action, kind, project."""
     try:
         task_repo = TaskItemRepository(session)
         task = await task_repo.get_by_id(task_id)
@@ -395,6 +396,8 @@ async def edit_task(
 
         if normalized_title.strip():
             task.normalized_title = normalized_title.strip()
+
+        task.next_action = next_action.strip() or None
 
         if kind.strip():
             try:
