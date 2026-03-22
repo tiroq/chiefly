@@ -691,12 +691,15 @@ async def lifespan(app: FastAPI):
     scheduler.start()
     logger.info("scheduler_started")
 
-    # Run project sync immediately on startup so projects are available from the first poll
-    try:
-        await run_project_sync()
-        logger.info("project_sync_startup_completed")
-    except Exception as e:
-        logger.warning("project_sync_startup_failed", error=str(e))
+    # Run project sync in the background on startup so the server is available immediately
+    async def _startup_project_sync() -> None:
+        try:
+            await run_project_sync()
+            logger.info("project_sync_startup_completed")
+        except Exception as e:
+            logger.warning("project_sync_startup_failed", error=str(e))
+
+    asyncio.create_task(_startup_project_sync())
 
     yield
 

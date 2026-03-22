@@ -49,13 +49,14 @@ class AdminDashboardService:
         since_24h = datetime.now(timezone.utc) - timedelta(hours=24)
         error_count_24h = await self._event_repo.count_events(severity="error", since=since_24h)
 
+        kind_expr = TaskSnapshot.payload.op("->>")("kind")
         kind_result = await session.execute(
             select(
-                TaskSnapshot.payload["kind"].as_string(),
+                kind_expr,
                 func.count(),
             )
             .where(TaskSnapshot.is_latest == True)  # noqa: E712
-            .group_by(TaskSnapshot.payload["kind"].as_string())
+            .group_by(kind_expr)
         )
         tasks_by_kind = {row[0]: row[1] for row in kind_result.all() if row[0] is not None}
 

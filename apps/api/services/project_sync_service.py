@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import asyncio
 import uuid
 from datetime import datetime, timezone
 from typing import TypedDict
@@ -47,14 +48,15 @@ class ProjectSyncService:
         self._project_repo = project_repo
         self._llm = llm
 
-    def _classify_type(self, name: str) -> ProjectType:
+    async def _classify_type(self, name: str) -> ProjectType:
         """Use LLM to classify the project type; fall back to PERSONAL."""
         if self._llm is None:
             return ProjectType.PERSONAL
         types_block = "\n".join(f"- {t.value}" for t in _ALL_TYPES)
         prompt = _TYPE_CLASSIFY_PROMPT.format(name=name, types=types_block)
         try:
-            raw = self._llm._call_llm_sync(prompt).strip()
+            raw = await asyncio.to_thread(self._llm._call_llm_sync, prompt)
+            raw = raw.strip()
             if raw.startswith("```"):
                 raw = "\n".join(raw.split("\n")[1:-1])
             data = json.loads(raw)
@@ -108,7 +110,7 @@ class ProjectSyncService:
                 if await self._project_repo.get_by_slug(slug) is not None:
                     slug = f"{slug}-{tl_id[:6].lower()}"
 
-                project_type = ProjectType.PERSONAL if tl_id == inbox_list_id else self._classify_type(tl_title)
+                project_type = ProjectType.PERSONAL if tl_id == inbox_list_id else await self._classify_type(tl_title)
                 project = Project(
                     id=uuid.uuid4(),
                     name=tl_title,
