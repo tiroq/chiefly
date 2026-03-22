@@ -1,9 +1,34 @@
 <div class="card" style="margin-bottom: var(--spacing-6);">
   <div class="flex" style="justify-content: space-between; align-items: flex-start; margin-bottom: var(--spacing-4);">
-    <div>
-      <h1 style="font-size: 1.5rem; font-weight: 600; margin-bottom: var(--spacing-2);">
-        {{ result.task.normalized_title or "Untitled Task" }}
-      </h1>
+    <div style="flex: 1; min-width: 0; margin-right: var(--spacing-4);">
+      <div id="title-display" style="display: flex; align-items: center; gap: var(--spacing-2); margin-bottom: var(--spacing-2);">
+        <h1 id="title-text" style="font-size: 1.5rem; font-weight: 600; margin: 0;">
+          {{ result.task.normalized_title or "Untitled Task" }}
+        </h1>
+        <button type="button"
+                onclick="startTitleEdit()"
+                title="Edit title"
+                style="background: none; border: none; cursor: pointer; color: var(--color-text-muted); padding: 2px 6px; border-radius: 4px; font-size: 0.9rem; line-height: 1; flex-shrink: 0;">
+          ✏️
+        </button>
+      </div>
+      <div id="title-edit-area" style="display: none; margin-bottom: var(--spacing-2);">
+        <form style="display: flex; gap: var(--spacing-2); align-items: center;"
+              hx-post="/admin/api/tasks/{{ result.task.id }}/edit"
+              hx-swap="none"
+              hx-on:htmx:after-request="if(event.detail.successful){onTitleSaved(this)}">
+          <input type="hidden" name="kind" value="{{ result.task.kind or '' }}">
+          <input type="hidden" name="project_id" value="{{ result.task.project_id or '' }}">
+          <input type="text"
+                 id="title-input"
+                 name="normalized_title"
+                 value="{{ result.task.normalized_title or '' }}"
+                 style="flex: 1; padding: var(--spacing-2); border: 1px solid var(--color-border); border-radius: 4px; font-size: 1.25rem; font-weight: 600;"
+                 onkeydown="if(event.key==='Escape'){cancelTitleEdit()}">
+          <button type="submit" class="btn btn-primary" style="white-space: nowrap;">Save</button>
+          <button type="button" class="btn btn-secondary" onclick="cancelTitleEdit()">Cancel</button>
+        </form>
+      </div>
       <div class="flex gap-2" style="align-items: center; flex-wrap: wrap;">
         <span class="badge badge-{{ result.task.status.lower() if result.task.status else 'new' }}">
           {{ result.task.status }}
@@ -82,31 +107,53 @@
     </div>
   </div>
 
-  {% if result.task.next_action %}
   <div style="margin-bottom: var(--spacing-6);">
-    <h3 style="font-size: 0.875rem; font-weight: 600; color: var(--color-text-muted); text-transform: uppercase; margin-bottom: var(--spacing-2);">
+    <h3 style="font-size: 0.875rem; font-weight: 600; color: var(--color-text-muted); text-transform: uppercase; margin-bottom: var(--spacing-2); display: flex; align-items: center; gap: var(--spacing-2);">
       Next Action
+      <button type="button"
+              onclick="startDescEdit()"
+              title="Edit next action"
+              style="background: none; border: none; cursor: pointer; color: var(--color-text-muted); padding: 2px 6px; border-radius: 4px; font-size: 0.9rem; line-height: 1;">
+        ✏️
+      </button>
     </h3>
-    <div style="background-color: var(--color-background); padding: var(--spacing-3); border-radius: 4px; border: 1px solid var(--color-border);">
-      {{ result.task.next_action }}
+    <div id="desc-display">
+      {% if result.task.next_action %}
+      <div style="background-color: var(--color-background); padding: var(--spacing-3); border-radius: 4px; border: 1px solid var(--color-border);">
+        {{ result.task.next_action }}
+      </div>
+      {% else %}
+      <div style="color: var(--color-text-muted); font-style: italic; font-size: 0.875rem;">None</div>
+      {% endif %}
+    </div>
+    <div id="desc-edit-area" style="display: none;">
+      <form style="display: flex; flex-direction: column; gap: var(--spacing-2);"
+            hx-post="/admin/api/tasks/{{ result.task.id }}/edit"
+            hx-swap="none"
+            hx-on:htmx:after-request="if(event.detail.successful){onDescSaved(this)}">
+        <input type="hidden" name="normalized_title" value="{{ result.task.normalized_title or '' }}">
+        <input type="hidden" name="kind" value="{{ result.task.kind or '' }}">
+        <input type="hidden" name="project_id" value="{{ result.task.project_id or '' }}">
+        <textarea id="desc-input"
+                  name="next_action"
+                  rows="3"
+                  style="width: 100%; padding: var(--spacing-2); border: 1px solid var(--color-border); border-radius: 4px; font-size: 0.875rem; resize: vertical;"
+                  onkeydown="if(event.key==='Escape'){cancelDescEdit()}">{{ result.task.next_action or '' }}</textarea>
+        <div style="display: flex; gap: var(--spacing-2);">
+          <button type="submit" class="btn btn-primary">Save</button>
+          <button type="button" class="btn btn-secondary" onclick="cancelDescEdit()">Cancel</button>
+        </div>
+      </form>
     </div>
   </div>
-  {% endif %}
 </div>
 
 <div class="card" style="margin-top: var(--spacing-4); margin-bottom: var(--spacing-4);">
-  <h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: var(--spacing-4);">Edit Task</h2>
+  <h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: var(--spacing-4);">Classification</h2>
   <form hx-post="/admin/api/tasks/{{ result.task.id }}/edit"
         hx-swap="none"
-        style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--spacing-4);">
-    <div>
-      <label style="display: block; font-size: 0.875rem; font-weight: 600; margin-bottom: var(--spacing-1);">Normalized Title</label>
-      <input type="text" name="normalized_title"
-             value="{{ result.task.normalized_title or '' }}"
-             placeholder="e.g. Buy groceries"
-             style="width: 100%; padding: var(--spacing-2); border: 1px solid var(--color-border); border-radius: 4px; font-size: 0.875rem;">
-    </div>
-    <div>
+        style="display: flex; gap: var(--spacing-4); align-items: flex-end; flex-wrap: wrap;">
+    <div style="flex: 1; min-width: 140px;">
       <label style="display: block; font-size: 0.875rem; font-weight: 600; margin-bottom: var(--spacing-1);">Kind</label>
       <select name="kind" style="width: 100%; padding: var(--spacing-2); border: 1px solid var(--color-border); border-radius: 4px; font-size: 0.875rem;">
         <option value="">— None —</option>
@@ -115,7 +162,7 @@
         {% endfor %}
       </select>
     </div>
-    <div>
+    <div style="flex: 2; min-width: 180px;">
       <label style="display: block; font-size: 0.875rem; font-weight: 600; margin-bottom: var(--spacing-1);">Project</label>
       <select name="project_id" style="width: 100%; padding: var(--spacing-2); border: 1px solid var(--color-border); border-radius: 4px; font-size: 0.875rem;">
         <option value="">— None —</option>
@@ -124,11 +171,51 @@
         {% endfor %}
       </select>
     </div>
-    <div style="display: flex; align-items: flex-end;">
+    <div>
       <button type="submit" class="btn btn-primary">Save Changes</button>
     </div>
   </form>
 </div>
+
+<script>
+function startTitleEdit() {
+  document.getElementById('title-display').style.display = 'none';
+  document.getElementById('title-edit-area').style.display = 'block';
+  var input = document.getElementById('title-input');
+  input.focus();
+  input.select();
+}
+function cancelTitleEdit() {
+  document.getElementById('title-display').style.display = 'flex';
+  document.getElementById('title-edit-area').style.display = 'none';
+}
+function onTitleSaved(form) {
+  var input = form.querySelector('[name="normalized_title"]');
+  var newTitle = input.value.trim() || 'Untitled Task';
+  document.getElementById('title-text').textContent = newTitle;
+  cancelTitleEdit();
+}
+function startDescEdit() {
+  document.getElementById('desc-display').style.display = 'none';
+  document.getElementById('desc-edit-area').style.display = 'block';
+  document.getElementById('desc-input').focus();
+}
+function cancelDescEdit() {
+  document.getElementById('desc-display').style.display = 'block';
+  document.getElementById('desc-edit-area').style.display = 'none';
+}
+function onDescSaved(form) {
+  var textarea = form.querySelector('[name="next_action"]');
+  var newDesc = textarea.value.trim();
+  var display = document.getElementById('desc-display');
+  if (newDesc) {
+    display.innerHTML = '<div style="background-color: var(--color-background); padding: var(--spacing-3); border-radius: 4px; border: 1px solid var(--color-border);">' + newDesc + '</div>';
+  } else {
+    display.innerHTML = '<div style="color: var(--color-text-muted); font-style: italic; font-size: 0.875rem;">None</div>';
+  }
+  cancelDescEdit();
+}
+</script>
 
 <div class="card">
   <h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: var(--spacing-4);">Revision Timeline</h2>
