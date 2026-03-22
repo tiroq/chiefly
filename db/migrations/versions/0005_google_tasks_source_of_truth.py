@@ -28,6 +28,7 @@ def upgrade() -> None:
         sa.Column("pointer_updated_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("last_seen_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("last_google_updated", sa.String(255), nullable=True),
+        sa.Column("consecutive_misses", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("state", sa.String(50), nullable=False, server_default="unadopted"),
         sa.Column("processing_status", sa.String(50), nullable=False, server_default="pending"),
         sa.Column(
