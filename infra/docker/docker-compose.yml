@@ -23,7 +23,7 @@ services:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-chiefly}:${POSTGRES_PASSWORD:-chiefly}@db:5432/${POSTGRES_DB:-chiefly}
+      DATABASE_URL: postgresql://chiefly:chiefly@db:5432/chiefly
     command: ["alembic", "upgrade", "head"]
     restart: "no"
 
@@ -46,6 +46,8 @@ services:
       - ../../.env
     volumes:
       - ../../credentials:/app/credentials
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
 volumes:

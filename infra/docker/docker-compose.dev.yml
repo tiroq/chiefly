@@ -1,0 +1,45 @@
+# Development docker-compose with hot reload
+# Use: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+# Or: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+
+version: "3.8"
+
+services:
+  db:
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-chiefly}
+      POSTGRES_USER: ${POSTGRES_USER:-chiefly}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-chiefly}
+
+  api:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile
+      args:
+        INSTALL_DEV: "true"
+        ENABLE_RELOAD: "true"
+    environment:
+      APP_ENV: development
+      LOG_LEVEL: ${LOG_LEVEL:-DEBUG}
+    # Mount source code directories for hot reload
+    volumes:
+      - ../../apps:/app/apps
+      - ../../core:/app/core
+      - ../../db:/app/db
+      - ../../credentials:/app/credentials
+    # Override command to enable hot reload
+    command: >
+      uvicorn apps.api.main:app
+      --reload
+      --reload-dir apps
+      --reload-dir core
+      --reload-dir db
+      --host 0.0.0.0
+      --port 8000
+      --log-level debug
+      --access-log
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  postgres_data:
