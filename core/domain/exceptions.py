@@ -36,3 +36,11 @@ class LockAcquisitionError(ChieflyError):
 
 class SessionNotFoundError(ChieflyError):
     """Raised when a Telegram review session cannot be found."""
+
+
+class RollbackError(ChieflyError):
+    """Raised when a rollback operation fails."""
+
+
+class RollbackDriftError(RollbackError):
+    """Raised when the Google Task was modified externally since the last revision."""

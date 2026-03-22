@@ -1,13 +1,11 @@
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import datetime
 from uuid import UUID
 
 from core.domain.enums import (
-    ConfidenceBand,
     ProjectType,
     ReviewAction,
     TaskKind,
-    TaskStatus,
 )
 
 
@@ -24,36 +22,12 @@ class Project:
 
 
 @dataclass
-class TaskItem:
-    id: UUID
-    source_google_task_id: str
-    source_google_tasklist_id: str
-    raw_text: str
-    status: TaskStatus
-    kind: TaskKind | None = None
-    normalized_title: str | None = None
-    project_id: UUID | None = None
-    current_google_task_id: str | None = None
-    current_google_tasklist_id: str | None = None
-    next_action: str | None = None
-    due_hint: str | None = None
-    confidence_score: float | None = None
-    confidence_band: ConfidenceBand | None = None
-    llm_model: str | None = None
-    is_processed: bool = False
-    created_at: datetime = field(default_factory=lambda: datetime.now(tz=timezone.utc))
-    updated_at: datetime = field(default_factory=lambda: datetime.now(tz=timezone.utc))
-    confirmed_at: datetime | None = None
-    completed_at: datetime | None = None
-
-
-@dataclass
 class TaskRevision:
     id: UUID
-    task_item_id: UUID
+    stable_id: UUID
     revision_no: int
     raw_text: str
-    proposal_json: dict
+    proposal_json: dict[str, object]
     created_at: datetime
     user_decision: ReviewAction | None = None
     user_notes: str | None = None
@@ -66,7 +40,7 @@ class TaskRevision:
 @dataclass
 class TelegramReviewSession:
     id: UUID
-    task_item_id: UUID
+    stable_id: UUID
     telegram_chat_id: str
     telegram_message_id: int
     status: str
@@ -78,5 +52,5 @@ class TelegramReviewSession:
 class DailyReviewSnapshot:
     id: UUID
     summary_text: str
-    payload_json: dict
+    payload_json: dict[str, object]
     created_at: datetime

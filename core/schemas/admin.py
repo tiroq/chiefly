@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass, field
+from datetime import datetime
 
-from db.models.task_item import TaskItem
 from db.models.task_revision import TaskRevision
 from db.models.system_event import SystemEvent
 from db.models.project import Project
@@ -11,8 +12,30 @@ from db.models.project_prompt_version import ProjectPromptVersion
 
 
 @dataclass
+class TaskView:
+    # Source: task_records
+    id: uuid.UUID  # stable_id
+    raw_text: str  # Google task title from snapshot payload
+    status: str  # processing_status (WorkflowStatus)
+    state: str  # TaskRecordState
+    created_at: datetime
+    updated_at: datetime
+    current_tasklist_id: str | None = None
+    current_task_id: str | None = None
+    last_error: str | None = None
+    # Source: proposed_changes / notes envelope metadata
+    normalized_title: str | None = None
+    kind: str | None = None
+    project_id: uuid.UUID | None = None
+    project_name: str | None = None
+    next_action: str | None = None
+    due_hint: str | None = None
+    confidence_band: str | None = None
+
+
+@dataclass
 class TaskListResult:
-    items: list[TaskItem] = field(default_factory=list)
+    items: list[TaskView] = field(default_factory=list)
     total: int = 0
     page: int = 1
     per_page: int = 25
@@ -21,7 +44,7 @@ class TaskListResult:
 
 @dataclass
 class TaskDetailResult:
-    task: TaskItem | None = None
+    task: TaskView | None = None
     revisions: list[TaskRevision] = field(default_factory=list)
 
 

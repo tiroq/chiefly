@@ -3,21 +3,7 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
-from core.domain.enums import ConfidenceBand, ProjectType, TaskKind, TaskStatus
-
-
-class TaskItemResponse(BaseModel):
-    id: UUID
-    source_google_task_id: str
-    raw_text: str
-    normalized_title: str | None
-    kind: TaskKind | None
-    status: TaskStatus
-    confidence_band: ConfidenceBand | None
-    created_at: datetime
-    updated_at: datetime
-
-    model_config = {"from_attributes": True}
+from core.domain.enums import ProjectType
 
 
 class ProjectResponse(BaseModel):
