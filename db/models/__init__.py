@@ -3,8 +3,10 @@ from db.models.processing_lock import ProcessingLock
 from db.models.project import Project
 from db.models.project_alias import ProjectAlias
 from db.models.project_prompt_version import ProjectPromptVersion
+from db.models.source_task import SourceTask
 from db.models.system_event import SystemEvent
 from db.models.task_item import TaskItem
+from db.models.task_processing_queue import TaskProcessingQueue
 from db.models.task_revision import TaskRevision
 from db.models.telegram_review_session import TelegramReviewSession
 
@@ -12,8 +14,10 @@ __all__ = [
     "Project",
     "ProjectAlias",
     "ProjectPromptVersion",
+    "SourceTask",
     "SystemEvent",
     "TaskItem",
+    "TaskProcessingQueue",
     "TaskRevision",
     "TelegramReviewSession",
     "DailyReviewSnapshot",
