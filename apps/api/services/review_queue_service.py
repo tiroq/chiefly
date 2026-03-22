@@ -36,7 +36,7 @@ class ReviewQueueService:
         if await session_repo.has_active_review():
             return False
 
-        next_item = await session_repo.get_next_queued()
+        next_item = await session_repo.get_next_queued_for_update()
         if next_item is None:
             return False
 

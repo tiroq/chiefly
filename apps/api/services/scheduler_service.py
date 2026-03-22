@@ -1,7 +1,3 @@
-"""
-Scheduler service using APScheduler.
-"""
-
 from __future__ import annotations
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -24,10 +20,12 @@ def get_scheduler() -> AsyncIOScheduler:
 
 def setup_scheduler(
     poll_interval_seconds: int,
+    processing_interval_seconds: int,
     daily_review_cron: str,
     project_sync_cron: str,
     timezone: str,
     poll_job,
+    processing_job,
     review_job,
     project_sync_job,
 ) -> AsyncIOScheduler:
@@ -37,6 +35,15 @@ def setup_scheduler(
         poll_job,
         trigger=IntervalTrigger(seconds=poll_interval_seconds),
         id="inbox_poll",
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+    )
+
+    scheduler.add_job(
+        processing_job,
+        trigger=IntervalTrigger(seconds=processing_interval_seconds),
+        id="task_processing",
         replace_existing=True,
         coalesce=True,
         max_instances=1,
@@ -67,6 +74,7 @@ def setup_scheduler(
     logger.info(
         "scheduler_configured",
         poll_interval=poll_interval_seconds,
+        processing_interval=processing_interval_seconds,
         daily_review_cron=daily_review_cron,
     )
 
