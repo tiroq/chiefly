@@ -85,13 +85,24 @@ class LLMService:
     def _call_llm_sync(self, prompt: str) -> str:
         """Synchronous LLM call — always run via asyncio.to_thread."""
         client = self._get_client()
+        messages: list[dict] = []
+        # Disable chain-of-thought thinking for Ollama reasoning models (e.g. qwen3).
+        # Thinking mode exhausts max_tokens on internal reasoning, leaving content empty.
+        if self._provider == "ollama":
+            messages.append({"role": "system", "content": "/no_think"})
+        messages.append({"role": "user", "content": prompt})
         response = client.chat.completions.create(
             model=self._model,
-            messages=[{"role": "user", "content": prompt}],
+            messages=messages,
             temperature=0.2,
-            max_tokens=1024,
+            max_tokens=2048,
         )
-        return response.choices[0].message.content or ""
+        content = response.choices[0].message.content or ""
+        # Strip <think>...</think> blocks emitted by reasoning models
+        if "<think>" in content:
+            import re
+            content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
+        return content
 
     async def classify_task(
         self,
