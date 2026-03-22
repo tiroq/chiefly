@@ -19,6 +19,11 @@ class SystemEvent(Base):
         ForeignKey("task_items.id", ondelete="SET NULL"),
         nullable=True,
     )
+    stable_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey("task_records.stable_id", ondelete="SET NULL"),
+        nullable=True,
+    )
     project_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid,
         ForeignKey("projects.id", ondelete="SET NULL"),
