@@ -41,3 +41,21 @@ class ConfidenceBand(StrEnum):
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
+
+
+class ProcessingStatus(StrEnum):
+    PENDING = "pending"
+    LOCKED = "locked"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+
+
+class ProcessingReason(StrEnum):
+    NEW_TASK = "new_task_detected"
+    SOURCE_CHANGED = "source_task_changed"
+    MANUAL_REPROCESS = "manual_reprocess_requested"
+    PROMPT_VERSION_CHANGED = "prompt_version_changed"
+    CLASSIFICATION_FAILED = "classification_failed"
+    LOW_CONFIDENCE_REPROCESS = "low_confidence_reprocess"
