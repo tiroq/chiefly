@@ -39,6 +39,7 @@ dev = [
     "anyio>=4.4.0",
     "factory-boy>=3.3.0",
     "freezegun>=1.5.0",
+    "watchfiles>=0.21.0",
 ]
 
 [tool.hatch.build.targets.wheel]
