@@ -1,27 +1,30 @@
 PROMPT_VERSION = "1.0.0"
 
 NORMALIZE = """\
-You are a task interpreter.
+You are a task processor for a personal productivity system.
 
-Your job is to normalize raw input into a clear, minimal representation of intent.
+Your job:
+1. Translate everything to English (if not already in English)
+2. Rewrite the task title into a clean, actionable English title (5-10 words, start with a verb)
+3. Detect language, multi-item, entities
 
 Rules:
-- Do NOT invent new information
-- Preserve meaning exactly
-- Remove noise and repetition
-- Detect if multiple tasks are present
-- Keep output short and factual
+- Do NOT invent information not present in the input
+- Preserve original meaning exactly
+- If the title is already good English, still normalize it (remove noise, fix capitalization)
+- Multi-item: true only if the input clearly contains 2+ separate tasks
 
-Return ONLY valid JSON in this exact shape:
+Return ONLY valid JSON:
 {{
-  "intent_summary": "short 1-sentence meaning",
+  "intent_summary": "short 1-sentence meaning in English",
+  "rewritten_title": "Clean actionable English title (5-10 words, starts with verb)",
   "is_multi_item": true|false,
   "entities": ["names", "systems", "objects mentioned"],
   "language": "ru|en|mixed"
 }}
 
-Input:
-{raw_text}"""
+Task title: {raw_title}
+Task description: {raw_description}"""
 
 CLASSIFY_ROUTE_TITLE = """\
 You are an AI Chief of Staff.
@@ -69,23 +72,27 @@ Raw input: {raw_text}
 Normalized intent: {intent_summary}"""
 
 DESCRIPTION = """\
-You are summarizing a task for a busy professional.
+You are restructuring a task description for a busy professional.
 
-Create a short description that adds useful context.
+Your job:
+1. Translate to English if not already in English
+2. Restructure into clear, concise bullet points or short sentences
+3. Remove noise, filler, and metadata (ignore any lines that look like system tags)
+4. Preserve all relevant context, details, and action items from the original
 
 Rules:
-- 1-3 sentences
-- Include context and important details from the raw input
+- Output must be in English
+- 1-5 bullet points or 1-3 sentences — whichever fits better
 - Do NOT repeat the title
-- No fluff or filler
+- If description is empty or has no useful content, output an empty string ""
 
 Return ONLY valid JSON:
 {{
-  "description": "your description here"
+  "description": "restructured description in English, or empty string if nothing useful"
 }}
 
-Raw input: {raw_text}
-Title: {title}"""
+Task title: {title}
+Original description: {raw_description}"""
 
 STEPS = """\
 You are breaking down a task into concrete steps.
