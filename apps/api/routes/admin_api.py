@@ -129,7 +129,11 @@ async def reclassify_task(
             alias_repo=alias_repo,
         )
 
-        classification, project = await classification_svc.classify(raw_text, active_projects)
+        classification, project = await classification_svc.classify(
+            raw_text,
+            active_projects,
+            task_id=str(stable_id),
+        )
 
         revision_svc = RevisionService(session)
         await revision_svc.create_classification_revision(
