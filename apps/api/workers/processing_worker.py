@@ -108,7 +108,6 @@ async def _process_entry(
             record_repo=record_repo,
             snapshot_repo=snapshot_repo,
             revision_repo=revision_repo,
-            correlation_id=correlation_id,
         )
     elif record:
         stable_id = record.stable_id
@@ -280,8 +279,8 @@ async def _adopt_task(
     record_repo: TaskRecordRepository,
     snapshot_repo: TaskSnapshotRepository,
     revision_repo: TaskRevisionRepository,
-    correlation_id: uuid.UUID,
 ) -> uuid.UUID:
+    correlation_id = uuid.uuid4()
     new_stable_id = uuid.uuid4()
     old_stable_id = record.stable_id
 
