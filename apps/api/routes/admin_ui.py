@@ -50,8 +50,8 @@ async def admin_dashboard(
     }
 
     if is_htmx(request) and not is_htmx_boosted(request):
-        return templates.TemplateResponse("admin/partials/_dashboard.html", context)
-    return templates.TemplateResponse("admin/pages/dashboard.html", context)
+        return templates.TemplateResponse(request=request, name="admin/partials/_dashboard.html", context=context)
+    return templates.TemplateResponse(request=request, name="admin/pages/dashboard.html", context=context)
 
 
 @router.get("/projects")
@@ -82,8 +82,8 @@ async def admin_projects(
     }
 
     if is_htmx(request) and not is_htmx_boosted(request):
-        return templates.TemplateResponse("admin/partials/_project_table.html", context)
-    return templates.TemplateResponse("admin/pages/projects.html", context)
+        return templates.TemplateResponse(request=request, name="admin/partials/_project_table.html", context=context)
+    return templates.TemplateResponse(request=request, name="admin/pages/projects.html", context=context)
 
 
 @router.post("/projects/sync")
@@ -123,7 +123,7 @@ async def sync_projects(
     }
 
     if is_htmx(request) and not is_htmx_boosted(request):
-        return templates.TemplateResponse("admin/partials/_project_table.html", context)
+        return templates.TemplateResponse(request=request, name="admin/partials/_project_table.html", context=context)
     return RedirectResponse("/admin/projects?msg=Sync+complete", status_code=303)
 
 
@@ -152,8 +152,8 @@ async def admin_events(
     }
 
     if is_htmx(request) and not is_htmx_boosted(request):
-        return templates.TemplateResponse("admin/partials/_event_table.html", context)
-    return templates.TemplateResponse("admin/pages/events.html", context)
+        return templates.TemplateResponse(request=request, name="admin/partials/_event_table.html", context=context)
+    return templates.TemplateResponse(request=request, name="admin/pages/events.html", context=context)
 
 
 @router.get("/tasks")
@@ -212,8 +212,8 @@ async def admin_tasks_list(
     }
 
     if is_htmx(request) and not is_htmx_boosted(request):
-        return templates.TemplateResponse("admin/partials/_task_table.html", context)
-    return templates.TemplateResponse("admin/pages/tasks.html", context)
+        return templates.TemplateResponse(request=request, name="admin/partials/_task_table.html", context=context)
+    return templates.TemplateResponse(request=request, name="admin/pages/tasks.html", context=context)
 
 
 @router.get("/tasks/{task_id}")
@@ -248,8 +248,8 @@ async def admin_task_detail(
     }
 
     if is_htmx(request) and not is_htmx_boosted(request):
-        return templates.TemplateResponse("admin/partials/_task_detail.html", context)
-    return templates.TemplateResponse("admin/pages/task_detail.html", context)
+        return templates.TemplateResponse(request=request, name="admin/partials/_task_detail.html", context=context)
+    return templates.TemplateResponse(request=request, name="admin/pages/task_detail.html", context=context)
 
 
 @router.get("/projects/{project_id}")
@@ -282,8 +282,8 @@ async def project_detail(
     }
 
     if is_htmx(request) and not is_htmx_boosted(request):
-        return templates.TemplateResponse("admin/partials/_project_detail.html", context)
-    return templates.TemplateResponse("admin/pages/project_detail.html", context)
+        return templates.TemplateResponse(request=request, name="admin/partials/_project_detail.html", context=context)
+    return templates.TemplateResponse(request=request, name="admin/pages/project_detail.html", context=context)
 
 
 @router.post("/projects/{project_id}/prompts")
@@ -380,7 +380,7 @@ async def view_prompt_version(
         "project_id": project_id,
     }
 
-    return templates.TemplateResponse("admin/partials/_prompt_detail_modal.html", context)
+    return templates.TemplateResponse(request=request, name="admin/partials/_prompt_detail_modal.html", context=context)
 
 
 @router.get("/projects/{project_id}/prompts/{version_id}/edit")
@@ -403,7 +403,7 @@ async def edit_prompt_version(
         "project_id": project_id,
     }
 
-    return templates.TemplateResponse("admin/partials/_prompt_edit_modal.html", context)
+    return templates.TemplateResponse(request=request, name="admin/partials/_prompt_edit_modal.html", context=context)
 
 
 @router.post("/projects/{project_id}/prompts/{version_id}/edit")

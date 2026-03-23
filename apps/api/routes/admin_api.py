@@ -384,8 +384,9 @@ async def import_tasks_from_google(
         active_projects = await project_repo.list_active()
         msg = f"Imported {imported} task(s). {skipped} already in DB."
         return templates.TemplateResponse(
-            "admin/partials/_task_table.html",
-            {
+            request=request,
+            name="admin/partials/_task_table.html",
+            context={
                 "request": request,
                 "result": result,
                 "projects": active_projects,

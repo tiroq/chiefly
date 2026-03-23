@@ -54,6 +54,13 @@ async def run_processing() -> None:
         source_task_id = entry.source_task_id
         stable_id = entry.stable_id
 
+    logger.info(
+        "processing_entry_claimed",
+        entry_id=str(entry_id),
+        source_task_id=str(source_task_id),
+        stable_id=str(stable_id) if stable_id else None,
+    )
+
     try:
         async with factory() as session:
             await _process_entry(session, entry_id, source_task_id, stable_id, settings)
@@ -96,18 +103,35 @@ async def _process_entry(
         await session.commit()
         return
 
+    logger.info(
+        "processing_source_task_loaded",
+        entry_id=str(entry_id),
+        source_task_id=str(source_task_id),
+        google_task_id=source_task.google_task_id,
+    )
+
     google_tasks_svc = GoogleTasksService(settings.google_credentials_file)
 
     record = await record_repo.get_by_stable_id(stable_id) if stable_id else None
 
     # --- Phase 3a: Adoption (if unadopted) ---
     if record and record.state == TaskRecordState.UNADOPTED.value:
+        logger.info(
+            "processing_adoption_start",
+            entry_id=str(entry_id),
+            stable_id=str(stable_id),
+        )
         stable_id = await _adopt_task(
             record=record,
             google_tasks_svc=google_tasks_svc,
             record_repo=record_repo,
             snapshot_repo=snapshot_repo,
             revision_repo=revision_repo,
+        )
+        logger.info(
+            "processing_adoption_complete",
+            entry_id=str(entry_id),
+            stable_id=str(stable_id),
         )
     elif record:
         stable_id = record.stable_id
@@ -120,6 +144,12 @@ async def _process_entry(
         await session.commit()
         return
 
+    logger.info(
+        "processing_status_update",
+        entry_id=str(entry_id),
+        stable_id=str(stable_id),
+        workflow_status=WorkflowStatus.PROCESSING,
+    )
     await record_repo.update_processing_status(stable_id, WorkflowStatus.PROCESSING)
     await queue_repo.mark_processing(entry_id, source_task.content_hash)
 
@@ -129,6 +159,14 @@ async def _process_entry(
     if record and record.current_tasklist_id and record.current_task_id:
         _tasklist = record.current_tasklist_id
         _task_id = record.current_task_id
+
+    logger.info(
+        "processing_fetching_google_task",
+        entry_id=str(entry_id),
+        stable_id=str(stable_id),
+        tasklist_id=_tasklist,
+        task_id=_task_id,
+    )
     current_task = google_tasks_svc.get_task(_tasklist, _task_id)
 
     if current_task is None:
@@ -152,7 +190,24 @@ async def _process_entry(
     routing = ProjectRoutingService()
     classification_svc = ClassificationService(llm, routing, alias_repo=alias_repo)
     projects = await project_repo.list_active()
+
+    logger.info(
+        "processing_classification_start",
+        entry_id=str(entry_id),
+        stable_id=str(stable_id),
+        raw_text_preview=raw_text[:120],
+        project_count=len(projects),
+    )
     classification, project = await classification_svc.classify(raw_text, projects)
+    logger.info(
+        "processing_classification_done",
+        entry_id=str(entry_id),
+        stable_id=str(stable_id),
+        kind=str(classification.kind),
+        confidence=str(classification.confidence),
+        project=project.name if project else None,
+        normalized_title=classification.normalized_title,
+    )
 
     await revision_service.create_classification_revision(
         stable_id=stable_id,
@@ -164,6 +219,14 @@ async def _process_entry(
     # --- Phase 3e: Patch Google notes with full metadata ---
     metadata = _build_metadata(classification, project)
     before_task = current_task
+
+    logger.info(
+        "processing_metadata_patch_start",
+        entry_id=str(entry_id),
+        stable_id=str(stable_id),
+        tasklist_id=before_task.tasklist_id,
+        task_id=before_task.id,
+    )
 
     new_notes = notes_codec.format(
         stable_id=stable_id,
@@ -205,8 +268,20 @@ async def _process_entry(
         before_revision.finished_at = datetime.now(tz=timezone.utc)
         before_revision.success = True
         await revision_repo.create(before_revision)
+        logger.info(
+            "processing_metadata_patch_done",
+            entry_id=str(entry_id),
+            stable_id=str(stable_id),
+            after_task_id=patched.id,
+        )
 
     except Exception as patch_err:
+        logger.error(
+            "processing_metadata_patch_failed",
+            entry_id=str(entry_id),
+            stable_id=str(stable_id),
+            error=str(patch_err),
+        )
         before_revision.finished_at = datetime.now(tz=timezone.utc)
         before_revision.success = False
         before_revision.error = str(patch_err)
@@ -215,6 +290,11 @@ async def _process_entry(
         raise
 
     # --- Phase 3f: Create snapshot after metadata patch ---
+    logger.info(
+        "processing_snapshot_create",
+        entry_id=str(entry_id),
+        stable_id=str(stable_id),
+    )
     from apps.api.services.sync_service import compute_content_hash
 
     new_hash = compute_content_hash(patched.title, patched.notes)
@@ -228,6 +308,11 @@ async def _process_entry(
     )
 
     # --- Phase 3g: Review session creation ---
+    logger.info(
+        "processing_review_session_create",
+        entry_id=str(entry_id),
+        stable_id=str(stable_id),
+    )
     proposed_changes = {
         "normalized_title": classification.normalized_title,
         "kind": str(classification.kind),
@@ -253,11 +338,22 @@ async def _process_entry(
     )
     await review_repo.create(review_session)
 
+    logger.info(
+        "processing_status_update",
+        entry_id=str(entry_id),
+        stable_id=str(stable_id),
+        workflow_status=WorkflowStatus.AWAITING_REVIEW,
+    )
     await record_repo.update_processing_status(stable_id, WorkflowStatus.AWAITING_REVIEW)
     await queue_repo.complete(entry_id)
     await session.commit()
 
     # --- Phase 3h: Trigger Telegram send ---
+    logger.info(
+        "processing_telegram_notify",
+        entry_id=str(entry_id),
+        stable_id=str(stable_id),
+    )
     telegram = TelegramService(settings.telegram_bot_token, settings.telegram_chat_id)
     from apps.api.services.review_queue_service import ReviewQueueService
 
