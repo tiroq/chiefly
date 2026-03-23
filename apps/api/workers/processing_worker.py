@@ -199,7 +199,12 @@ async def _process_entry(
         raw_description_preview=raw_description[:120] if raw_description else None,
         project_count=len(projects),
     )
-    classification, project = await classification_svc.classify(raw_text, projects, raw_description=raw_description)
+    classification, project = await classification_svc.classify(
+        raw_text,
+        projects,
+        raw_description=raw_description,
+        task_id=_task_id,
+    )
     logger.info(
         "processing_classification_done",
         entry_id=str(entry_id),
