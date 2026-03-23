@@ -140,6 +140,7 @@ class LLMService:
             model=self._model,
             provider=self._provider,
             prompt_chars=len(prompt),
+            prompt=prompt,
         )
         response = client.chat.completions.create(
             model=self._model,
@@ -155,6 +156,7 @@ class LLMService:
             step=step_name,
             model=self._model,
             response_chars=len(content),
+            response=content,
             prompt_tokens=usage.prompt_tokens if usage else None,
             completion_tokens=usage.completion_tokens if usage else None,
             total_tokens=usage.total_tokens if usage else None,
@@ -194,13 +196,16 @@ class LLMService:
                     break
         return None
 
-    async def normalize(self, raw_text: str) -> NormalizationResult:
-        prompt = NORMALIZE.format(raw_text=raw_text)
+    async def normalize(self, raw_title: str, raw_description: str = "") -> NormalizationResult:
+        prompt = NORMALIZE.format(
+            raw_title=raw_title,
+            raw_description=raw_description or "(none)",
+        )
         result = await self._call_and_parse(prompt, NormalizationResult, "normalize")
         if result is not None:
             return result
-        logger.info("normalize_fallback", raw_text=raw_text[:100])
-        return _fallback_normalization(raw_text)
+        logger.info("normalize_fallback", raw_title=raw_title[:100])
+        return _fallback_normalization(raw_title)
 
     async def classify_route_title(
         self,
@@ -218,8 +223,8 @@ class LLMService:
             prompt += f"\n\nProject-specific instructions:\n{custom_instructions}"
         return await self._call_and_parse(prompt, ClassifyRouteResult, "classify_route_title")
 
-    async def generate_description(self, raw_text: str, title: str) -> DescriptionResult | None:
-        prompt = DESCRIPTION.format(raw_text=raw_text, title=title)
+    async def generate_description(self, raw_description: str, title: str) -> DescriptionResult | None:
+        prompt = DESCRIPTION.format(raw_description=raw_description or "(none)", title=title)
         return await self._call_and_parse(prompt, DescriptionResult, "description")
 
     async def generate_steps(self, title: str, next_action: str) -> StepsResult | None:
@@ -234,15 +239,19 @@ class LLMService:
         self,
         raw_text: str,
         project_context: str,
+        raw_description: str = "",
         custom_instructions: str | None = None,
         include_description: bool = False,
         include_steps: bool = False,
         project_fallback: str = "Personal",
     ) -> PipelineResult:
-        norm = await self.normalize(raw_text)
+        norm = await self.normalize(raw_text, raw_description)
+
+        # Use LLM-rewritten title for classify step if available
+        classify_input = norm.rewritten_title if norm.rewritten_title else raw_text
 
         classify_result = await self.classify_route_title(
-            raw_text=raw_text,
+            raw_text=classify_input,
             intent_summary=norm.intent_summary,
             project_context=project_context,
             custom_instructions=custom_instructions,
@@ -271,10 +280,10 @@ class LLMService:
             if disambig is not None:
                 pipeline = pipeline.model_copy(update={"disambiguation_options": disambig.options})
 
-        if include_description:
-            desc = await self.generate_description(raw_text, classify_result.title)
-            if desc is not None:
-                pipeline = pipeline.model_copy(update={"description": desc.description})
+        # Always run description step — restructures + translates notes to English
+        desc = await self.generate_description(raw_description, classify_result.title)
+        if desc is not None and desc.description:
+            pipeline = pipeline.model_copy(update={"description": desc.description})
 
         if include_steps:
             steps = await self.generate_steps(classify_result.title, classify_result.next_action)
