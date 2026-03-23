@@ -82,7 +82,8 @@ def _fallback_classification(raw_text: str) -> TaskClassificationResult:
 
 def _fallback_normalization(raw_text: str) -> NormalizationResult:
     return NormalizationResult(
-        intent_summary=raw_text[:500].strip() or "unknown",
+        intent_summary=raw_text.strip() or "unknown",
+        rewritten_title=raw_text.strip(),
         is_multi_item=False,
         entities=[],
         language="en",
