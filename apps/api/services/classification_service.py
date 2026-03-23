@@ -111,6 +111,7 @@ class ClassificationService:
         raw_text: str,
         available_projects: list[Project],
         raw_description: str = "",
+        task_id: str | None = None,
         include_description: bool = False,
         include_steps: bool = False,
     ) -> tuple[PipelineResult, Project | None]:
@@ -127,6 +128,7 @@ class ClassificationService:
             raw_text=raw_text,
             project_context=project_context,
             raw_description=raw_description,
+            task_id=task_id,
             include_description=include_description,
             include_steps=include_steps,
             project_fallback=default_project_name,
@@ -147,6 +149,7 @@ class ClassificationService:
                     raw_text=raw_text,
                     project_context=project_context,
                     raw_description=raw_description,
+                    task_id=task_id,
                     custom_instructions=custom_instructions,
                     include_description=include_description,
                     include_steps=include_steps,
@@ -176,11 +179,13 @@ class ClassificationService:
         raw_text: str,
         available_projects: list[Project],
         raw_description: str = "",
+        task_id: str | None = None,
     ) -> tuple[TaskClassificationResult, Project | None]:
         pipeline_result, project = await self.classify_pipeline(
             raw_text=raw_text,
             available_projects=available_projects,
             raw_description=raw_description,
+            task_id=task_id,
             include_description=False,
             include_steps=True,
         )

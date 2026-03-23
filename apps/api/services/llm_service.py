@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import asyncio
+import uuid
 from typing import TypeVar
 
 from pydantic import BaseModel
@@ -127,7 +128,13 @@ class LLMService:
             )
         return OpenAI(api_key=self._api_key)
 
-    def _call_llm_sync(self, prompt: str, step_name: str = "") -> str:
+    def _call_llm_sync(
+        self,
+        prompt: str,
+        step_name: str = "",
+        reqid: str | None = None,
+        task_id: str | None = None,
+    ) -> str:
         import re
 
         client = self._get_client()
@@ -138,6 +145,8 @@ class LLMService:
         logger.info(
             "llm_request",
             step=step_name,
+            reqid=reqid,
+            task_id=task_id,
             model=self._model,
             provider=self._provider,
             prompt_chars=len(prompt),
@@ -155,6 +164,8 @@ class LLMService:
         logger.info(
             "llm_response",
             step=step_name,
+            reqid=reqid,
+            task_id=task_id,
             model=self._model,
             response_chars=len(content),
             response=content,
@@ -171,17 +182,27 @@ class LLMService:
         prompt: str,
         schema: type[T],
         step_name: str,
+        task_id: str | None = None,
         retries: int = 2,
     ) -> T | None:
         for attempt in range(retries):
             try:
-                raw_response = await asyncio.to_thread(self._call_llm_sync, prompt, step_name)
+                reqid = uuid.uuid4().hex[:8]
+                raw_response = await asyncio.to_thread(
+                    self._call_llm_sync,
+                    prompt,
+                    step_name,
+                    reqid,
+                    task_id,
+                )
                 raw_response = _strip_code_fences(raw_response)
                 data = json.loads(raw_response)
                 result = schema.model_validate(data)
                 logger.info(
                     "llm_step_success",
                     step=step_name,
+                    reqid=reqid,
+                    task_id=task_id,
                     model=self._model,
                     attempt=attempt,
                 )
@@ -197,12 +218,22 @@ class LLMService:
                     break
         return None
 
-    async def normalize(self, raw_title: str, raw_description: str = "") -> NormalizationResult:
+    async def normalize(
+        self,
+        raw_title: str,
+        raw_description: str = "",
+        task_id: str | None = None,
+    ) -> NormalizationResult:
         prompt = NORMALIZE.format(
             raw_title=raw_title,
             raw_description=raw_description or "(none)",
         )
-        result = await self._call_and_parse(prompt, NormalizationResult, "normalize")
+        result = await self._call_and_parse(
+            prompt,
+            NormalizationResult,
+            "normalize",
+            task_id=task_id,
+        )
         if result is not None:
             return result
         logger.info("normalize_fallback", raw_title=raw_title[:100])
@@ -214,6 +245,7 @@ class LLMService:
         intent_summary: str,
         project_context: str,
         custom_instructions: str | None = None,
+        task_id: str | None = None,
     ) -> ClassifyRouteResult | None:
         prompt = CLASSIFY_ROUTE_TITLE.format(
             raw_text=raw_text,
@@ -222,31 +254,67 @@ class LLMService:
         )
         if custom_instructions:
             prompt += f"\n\nProject-specific instructions:\n{custom_instructions}"
-        return await self._call_and_parse(prompt, ClassifyRouteResult, "classify_route_title")
+        return await self._call_and_parse(
+            prompt,
+            ClassifyRouteResult,
+            "classify_route_title",
+            task_id=task_id,
+        )
 
-    async def generate_description(self, raw_description: str, title: str) -> DescriptionResult | None:
+    async def generate_description(
+        self,
+        raw_description: str,
+        title: str,
+        task_id: str | None = None,
+    ) -> DescriptionResult | None:
         prompt = DESCRIPTION.format(raw_description=raw_description or "(none)", title=title)
-        return await self._call_and_parse(prompt, DescriptionResult, "description")
+        return await self._call_and_parse(
+            prompt,
+            DescriptionResult,
+            "description",
+            task_id=task_id,
+        )
 
-    async def generate_steps(self, title: str, next_action: str) -> StepsResult | None:
+    async def generate_steps(
+        self,
+        title: str,
+        next_action: str,
+        task_id: str | None = None,
+    ) -> StepsResult | None:
         prompt = STEPS.format(title=title, next_action=next_action)
-        return await self._call_and_parse(prompt, StepsResult, "steps")
+        return await self._call_and_parse(
+            prompt,
+            StepsResult,
+            "steps",
+            task_id=task_id,
+        )
 
-    async def disambiguate(self, raw_text: str, intent_summary: str) -> DisambiguationResult | None:
+    async def disambiguate(
+        self,
+        raw_text: str,
+        intent_summary: str,
+        task_id: str | None = None,
+    ) -> DisambiguationResult | None:
         prompt = DISAMBIGUATE.format(raw_text=raw_text, intent_summary=intent_summary)
-        return await self._call_and_parse(prompt, DisambiguationResult, "disambiguate")
+        return await self._call_and_parse(
+            prompt,
+            DisambiguationResult,
+            "disambiguate",
+            task_id=task_id,
+        )
 
     async def run_pipeline(
         self,
         raw_text: str,
         project_context: str,
         raw_description: str = "",
+        task_id: str | None = None,
         custom_instructions: str | None = None,
         include_description: bool = False,
         include_steps: bool = False,
         project_fallback: str = "Personal",
     ) -> PipelineResult:
-        norm = await self.normalize(raw_text, raw_description)
+        norm = await self.normalize(raw_text, raw_description, task_id=task_id)
 
         # Use LLM-rewritten title for classify step if available
         classify_input = norm.rewritten_title if norm.rewritten_title else raw_text
@@ -256,6 +324,7 @@ class LLMService:
             intent_summary=norm.intent_summary,
             project_context=project_context,
             custom_instructions=custom_instructions,
+            task_id=task_id,
         )
 
         if classify_result is None:
@@ -277,17 +346,25 @@ class LLMService:
         )
 
         if classify_result.confidence == ConfidenceBand.LOW:
-            disambig = await self.disambiguate(raw_text, norm.intent_summary)
+            disambig = await self.disambiguate(raw_text, norm.intent_summary, task_id=task_id)
             if disambig is not None:
                 pipeline = pipeline.model_copy(update={"disambiguation_options": disambig.options})
 
         # Always run description step — restructures + translates notes to English
-        desc = await self.generate_description(raw_description, classify_result.title)
+        desc = await self.generate_description(
+            raw_description,
+            classify_result.title,
+            task_id=task_id,
+        )
         if desc is not None and desc.description:
             pipeline = pipeline.model_copy(update={"description": desc.description})
 
         if include_steps:
-            steps = await self.generate_steps(classify_result.title, classify_result.next_action)
+            steps = await self.generate_steps(
+                classify_result.title,
+                classify_result.next_action,
+                task_id=task_id,
+            )
             if steps is not None:
                 pipeline = pipeline.model_copy(update={"steps": steps.steps})
 

@@ -61,14 +61,17 @@ class SystemEventService:
             project_id=project_id,
             payload_json=payload,
         )
+        created = await self._repo.create(event)
         logger.info(
             "system_event",
+            table="system_events",
+            id=str(created.id),
             event_type=event_type,
             severity=severity,
             subsystem=subsystem,
             message=message,
         )
-        return await self._repo.create(event)
+        return created
 
     async def log_admin_action(
         self,
