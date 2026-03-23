@@ -20,6 +20,7 @@ class Project(Base):
             ProjectType,
             name="project_type_enum",
             create_constraint=False,
+            native_enum=False,
             values_callable=lambda e: [m.value for m in e],
         ),
         nullable=False,
