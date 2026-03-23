@@ -126,7 +126,7 @@ class LLMService:
             )
         return OpenAI(api_key=self._api_key)
 
-    def _call_llm_sync(self, prompt: str) -> str:
+    def _call_llm_sync(self, prompt: str, step_name: str = "") -> str:
         import re
 
         client = self._get_client()
@@ -134,6 +134,13 @@ class LLMService:
         if self._provider == "ollama":
             messages.append({"role": "system", "content": "/no_think"})
         messages.append({"role": "user", "content": prompt})
+        logger.info(
+            "llm_request",
+            step=step_name,
+            model=self._model,
+            provider=self._provider,
+            prompt_chars=len(prompt),
+        )
         response = client.chat.completions.create(
             model=self._model,
             messages=messages,
@@ -142,6 +149,16 @@ class LLMService:
             response_format={"type": "json_object"},
         )
         content = response.choices[0].message.content or ""
+        usage = response.usage
+        logger.info(
+            "llm_response",
+            step=step_name,
+            model=self._model,
+            response_chars=len(content),
+            prompt_tokens=usage.prompt_tokens if usage else None,
+            completion_tokens=usage.completion_tokens if usage else None,
+            total_tokens=usage.total_tokens if usage else None,
+        )
         if "<think>" in content:
             content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
         return content
@@ -155,7 +172,7 @@ class LLMService:
     ) -> T | None:
         for attempt in range(retries):
             try:
-                raw_response = await asyncio.to_thread(self._call_llm_sync, prompt)
+                raw_response = await asyncio.to_thread(self._call_llm_sync, prompt, step_name)
                 raw_response = _strip_code_fences(raw_response)
                 data = json.loads(raw_response)
                 result = schema.model_validate(data)
