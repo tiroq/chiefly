@@ -110,6 +110,7 @@ class ClassificationService:
         self,
         raw_text: str,
         available_projects: list[Project],
+        raw_description: str = "",
         include_description: bool = False,
         include_steps: bool = False,
     ) -> tuple[PipelineResult, Project | None]:
@@ -125,6 +126,7 @@ class ClassificationService:
         pipeline_result = await self._llm.run_pipeline(
             raw_text=raw_text,
             project_context=project_context,
+            raw_description=raw_description,
             include_description=include_description,
             include_steps=include_steps,
             project_fallback=default_project_name,
@@ -144,6 +146,7 @@ class ClassificationService:
                 pipeline_result = await self._llm.run_pipeline(
                     raw_text=raw_text,
                     project_context=project_context,
+                    raw_description=raw_description,
                     custom_instructions=custom_instructions,
                     include_description=include_description,
                     include_steps=include_steps,
@@ -172,10 +175,12 @@ class ClassificationService:
         self,
         raw_text: str,
         available_projects: list[Project],
+        raw_description: str = "",
     ) -> tuple[TaskClassificationResult, Project | None]:
         pipeline_result, project = await self.classify_pipeline(
             raw_text=raw_text,
             available_projects=available_projects,
+            raw_description=raw_description,
             include_description=False,
             include_steps=True,
         )
