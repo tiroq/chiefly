@@ -15,9 +15,18 @@ class StructuredSQLFilter(logging.Filter):
     ROLLBACK, SELECT) is suppressed so the log stream stays readable.
     """
 
-    _INSERT_RE = re.compile(r"INSERT\s+INTO\s+(\w+)", re.IGNORECASE)
-    _UPDATE_RE = re.compile(r"UPDATE\s+(\w+)", re.IGNORECASE)
-    _DELETE_RE = re.compile(r"DELETE\s+FROM\s+(\w+)", re.IGNORECASE)
+    _INSERT_RE = re.compile(
+        r'INSERT\s+INTO\s+(?:"?[\w]+"?\.)?"?([\w]+)"?\s*\(',
+        re.IGNORECASE,
+    )
+    _UPDATE_RE = re.compile(
+        r'UPDATE\s+(?:ONLY\s+)?(?:"?[\w]+"?\.)?"?([\w]+)"?(?:\s+AS\s+"?[\w]+"?)?\s+SET\b',
+        re.IGNORECASE,
+    )
+    _DELETE_RE = re.compile(
+        r'DELETE\s+FROM\s+(?:ONLY\s+)?(?:"?[\w]+"?\.)?"?([\w]+)"?(?:\s+AS\s+"?[\w]+"?)?(?:\s+WHERE\b|\s+USING\b|\s*$)',
+        re.IGNORECASE,
+    )
     _SUPPRESS_RE = re.compile(
         r"^\s*(\[|BEGIN|COMMIT|ROLLBACK|SELECT|SHOW|SET\s)",
         re.IGNORECASE,
@@ -29,13 +38,22 @@ class StructuredSQLFilter(logging.Filter):
         msg = record.msg if isinstance(record.msg, str) else ""
         msg = " ".join(msg.split())
         if m := self._INSERT_RE.search(msg):
-            record.msg = f"sql_insert  table={m.group(1)}"
+            table_name = m.group(1)
+            if table_name.lower() == "table":
+                return False
+            record.msg = f"sql_insert  table={table_name}"
             return True
         if m := self._UPDATE_RE.search(msg):
-            record.msg = f"sql_update  table={m.group(1)}"
+            table_name = m.group(1)
+            if table_name.lower() == "table":
+                return False
+            record.msg = f"sql_update  table={table_name}"
             return True
         if m := self._DELETE_RE.search(msg):
-            record.msg = f"sql_delete  table={m.group(1)}"
+            table_name = m.group(1)
+            if table_name.lower() == "table":
+                return False
+            record.msg = f"sql_delete  table={table_name}"
             return True
         # Suppress SELECT, BEGIN, COMMIT, ROLLBACK, parameter lines, etc.
         return False
@@ -54,7 +72,7 @@ def configure_logging() -> None:
             structlog.processors.format_exc_info,
             structlog.dev.ConsoleRenderer()
             if settings.app_env == "development"
-            else structlog.processors.JSONRenderer(),
+            else structlog.processors.JSONRenderer(ensure_ascii=False),
         ],
         wrapper_class=structlog.make_filtering_bound_logger(log_level),
         context_class=dict,
