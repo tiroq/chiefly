@@ -1,4 +1,5 @@
 import logging
+import re
 import sys
 
 import structlog
@@ -6,13 +7,38 @@ import structlog
 from apps.api.config import get_settings
 
 
-class CompactSQLLogFilter(logging.Filter):
-    """Keep SQLAlchemy query logs readable in one line."""
+class StructuredSQLFilter(logging.Filter):
+    """Convert raw SQLAlchemy SQL logs to terse structured messages.
+
+    INSERT/UPDATE/DELETE lines are kept as a single-line summary with the
+    table name.  Everything else (parameters, [cached …], BEGIN, COMMIT,
+    ROLLBACK, SELECT) is suppressed so the log stream stays readable.
+    """
+
+    _INSERT_RE = re.compile(r"INSERT\s+INTO\s+(\w+)", re.IGNORECASE)
+    _UPDATE_RE = re.compile(r"UPDATE\s+(\w+)", re.IGNORECASE)
+    _DELETE_RE = re.compile(r"DELETE\s+FROM\s+(\w+)", re.IGNORECASE)
+    _SUPPRESS_RE = re.compile(
+        r"^\s*(\[|BEGIN|COMMIT|ROLLBACK|SELECT|SHOW|SET\s)",
+        re.IGNORECASE,
+    )
 
     def filter(self, record: logging.LogRecord) -> bool:
-        if record.name.startswith("sqlalchemy.engine") and isinstance(record.msg, str):
-            record.msg = " ".join(record.msg.split())
-        return True
+        if not record.name.startswith("sqlalchemy.engine"):
+            return True
+        msg = record.msg if isinstance(record.msg, str) else ""
+        msg = " ".join(msg.split())
+        if m := self._INSERT_RE.search(msg):
+            record.msg = f"sql_insert  table={m.group(1)}"
+            return True
+        if m := self._UPDATE_RE.search(msg):
+            record.msg = f"sql_update  table={m.group(1)}"
+            return True
+        if m := self._DELETE_RE.search(msg):
+            record.msg = f"sql_delete  table={m.group(1)}"
+            return True
+        # Suppress SELECT, BEGIN, COMMIT, ROLLBACK, parameter lines, etc.
+        return False
 
 
 def configure_logging() -> None:
@@ -48,7 +74,7 @@ def configure_logging() -> None:
 
     root_logger = logging.getLogger()
     for handler in root_logger.handlers:
-        handler.addFilter(CompactSQLLogFilter())
+        handler.addFilter(StructuredSQLFilter())
 
 
 def get_logger(name: str) -> structlog.stdlib.BoundLogger:
