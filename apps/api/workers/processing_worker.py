@@ -180,8 +180,8 @@ async def _process_entry(
 
     user_notes = notes_codec.extract_user_notes(current_task.notes)
     raw_text = current_task.title
-    if user_notes:
-        raw_text = f"{raw_text}\n{user_notes}"
+    # Description = user notes stripped of chiefly envelope, or source_task.notes_raw
+    raw_description = user_notes or source_task.notes_raw or ""
 
     # --- Phase 3c: LLM Classification ---
     llm = LLMService(
@@ -196,9 +196,10 @@ async def _process_entry(
         entry_id=str(entry_id),
         stable_id=str(stable_id),
         raw_text_preview=raw_text[:120],
+        raw_description_preview=raw_description[:120] if raw_description else None,
         project_count=len(projects),
     )
-    classification, project = await classification_svc.classify(raw_text, projects)
+    classification, project = await classification_svc.classify(raw_text, projects, raw_description=raw_description)
     logger.info(
         "processing_classification_done",
         entry_id=str(entry_id),
