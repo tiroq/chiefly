@@ -66,6 +66,28 @@ tasks:
     cmds:
       - "{{.PYTHON}} scripts/seed_projects.py"
 
+  auth:token:
+    desc: Authorize Google OAuth token and verify it works against the Tasks API
+    aliases: [a]
+    dotenv: [".env"]
+    cmds:
+      - "{{.PYTHON}} scripts/auth_tasks.py"
+      - cp scripts/token.json credentials/token.json
+      - |
+        {{.PYTHON}} -c "
+        import sys
+        from apps.api.services.google_tasks_service import GoogleTasksService
+        svc = GoogleTasksService('credentials/token.json')
+        lists = svc.list_tasklists()
+        if not lists and lists is not None:
+            print('Token verified OK — 0 task lists found (API reachable)')
+        elif lists:
+            print(f'Token verified OK — {len(lists)} task list(s) accessible')
+        else:
+            print('ERROR: could not verify token', file=sys.stderr)
+            sys.exit(1)
+        "
+
   docker:up:
     desc: Start Docker services in the background
     aliases: [up]
@@ -99,7 +121,7 @@ tasks:
 
   docker:rebuild-scratch:
     desc: Full teardown, rebuild from scratch, and bring everything back up
-    aliases: [scratch]
+    aliases: [s, scratch]
     cmds:
       - docker compose -f infra/docker/docker-compose.yml down -v
       - docker compose -f infra/docker/docker-compose.yml build --no-cache

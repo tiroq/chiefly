@@ -119,8 +119,13 @@ def load_or_authorize() -> Credentials:
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             print("Refreshing existing token...")
-            creds.refresh(Request())
-        else:
+            try:
+                creds.refresh(Request())
+            except Exception as exc:
+                print(f"Token refresh failed ({exc}), starting fresh OAuth flow...")
+                creds = None
+
+        if not creds or not creds.valid:
             print("Opening browser for Google OAuth authorization...")
             flow = InstalledAppFlow.from_client_secrets_file(
                 str(credentials_file),
