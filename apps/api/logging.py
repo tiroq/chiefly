@@ -1,5 +1,4 @@
 import logging
-import re
 import sys
 
 import structlog
@@ -7,56 +6,13 @@ import structlog
 from apps.api.config import get_settings
 
 
-class StructuredSQLFilter(logging.Filter):
-    """Convert raw SQLAlchemy SQL logs to terse structured messages.
-
-    INSERT/UPDATE/DELETE lines are kept as a single-line summary with the
-    table name.  Everything else (parameters, [cached …], BEGIN, COMMIT,
-    ROLLBACK, SELECT) is suppressed so the log stream stays readable.
-    """
-
-    _INSERT_RE = re.compile(
-        r'INSERT\s+INTO\s+(?:"?[\w]+"?\.)?"?([\w]+)"?\s*\(',
-        re.IGNORECASE,
-    )
-    _UPDATE_RE = re.compile(
-        r'UPDATE\s+(?:ONLY\s+)?(?:"?[\w]+"?\.)?"?([\w]+)"?(?:\s+AS\s+"?[\w]+"?)?\s+SET\b',
-        re.IGNORECASE,
-    )
-    _DELETE_RE = re.compile(
-        r'DELETE\s+FROM\s+(?:ONLY\s+)?(?:"?[\w]+"?\.)?"?([\w]+)"?(?:\s+AS\s+"?[\w]+"?)?(?:\s+WHERE\b|\s+USING\b|\s*$)',
-        re.IGNORECASE,
-    )
-    _SUPPRESS_RE = re.compile(
-        r"^\s*(\[|BEGIN|COMMIT|ROLLBACK|SELECT|SHOW|SET\s)",
-        re.IGNORECASE,
-    )
+class CompactSQLLogFilter(logging.Filter):
+    """Keep SQLAlchemy query logs readable in one line."""
 
     def filter(self, record: logging.LogRecord) -> bool:
-        if not record.name.startswith("sqlalchemy.engine"):
-            return True
-        msg = record.msg if isinstance(record.msg, str) else ""
-        msg = " ".join(msg.split())
-        if m := self._INSERT_RE.search(msg):
-            table_name = m.group(1)
-            if table_name.lower() == "table":
-                return False
-            record.msg = f"sql_insert  table={table_name}"
-            return True
-        if m := self._UPDATE_RE.search(msg):
-            table_name = m.group(1)
-            if table_name.lower() == "table":
-                return False
-            record.msg = f"sql_update  table={table_name}"
-            return True
-        if m := self._DELETE_RE.search(msg):
-            table_name = m.group(1)
-            if table_name.lower() == "table":
-                return False
-            record.msg = f"sql_delete  table={table_name}"
-            return True
-        # Suppress SELECT, BEGIN, COMMIT, ROLLBACK, parameter lines, etc.
-        return False
+        if record.name.startswith("sqlalchemy.engine") and isinstance(record.msg, str):
+            record.msg = " ".join(record.msg.split())
+        return True
 
 
 def configure_logging() -> None:
@@ -72,7 +28,7 @@ def configure_logging() -> None:
             structlog.processors.format_exc_info,
             structlog.dev.ConsoleRenderer()
             if settings.app_env == "development"
-            else structlog.processors.JSONRenderer(ensure_ascii=False),
+            else structlog.processors.JSONRenderer(),
         ],
         wrapper_class=structlog.make_filtering_bound_logger(log_level),
         context_class=dict,
@@ -92,7 +48,7 @@ def configure_logging() -> None:
 
     root_logger = logging.getLogger()
     for handler in root_logger.handlers:
-        handler.addFilter(StructuredSQLFilter())
+        handler.addFilter(CompactSQLLogFilter())
 
 
 def get_logger(name: str) -> structlog.stdlib.BoundLogger:
