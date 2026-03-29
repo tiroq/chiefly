@@ -137,20 +137,26 @@ class LLMService:
     ) -> str:
         import re
 
+        reqid = reqid or uuid.uuid4().hex[:8]
         client = self._get_client()
         messages: list[dict] = []
         if self._provider == "ollama":
             messages.append({"role": "system", "content": "/no_think"})
         messages.append({"role": "user", "content": prompt})
+        request_log: dict[str, str | int] = {
+            "reqid": reqid,
+            "model": self._model,
+            "provider": self._provider,
+            "prompt_chars": len(prompt),
+            "prompt": prompt,
+        }
+        if step_name:
+            request_log["step"] = step_name
+        if task_id:
+            request_log["task_id"] = task_id
         logger.info(
             "llm_request",
-            step=step_name,
-            reqid=reqid,
-            task_id=task_id,
-            model=self._model,
-            provider=self._provider,
-            prompt_chars=len(prompt),
-            prompt=prompt,
+            **request_log,
         )
         response = client.chat.completions.create(
             model=self._model,
@@ -161,17 +167,22 @@ class LLMService:
         )
         content = response.choices[0].message.content or ""
         usage = response.usage
+        response_log: dict[str, str | int | None] = {
+            "reqid": reqid,
+            "model": self._model,
+            "response_chars": len(content),
+            "response": content,
+            "prompt_tokens": usage.prompt_tokens if usage else None,
+            "completion_tokens": usage.completion_tokens if usage else None,
+            "total_tokens": usage.total_tokens if usage else None,
+        }
+        if step_name:
+            response_log["step"] = step_name
+        if task_id:
+            response_log["task_id"] = task_id
         logger.info(
             "llm_response",
-            step=step_name,
-            reqid=reqid,
-            task_id=task_id,
-            model=self._model,
-            response_chars=len(content),
-            response=content,
-            prompt_tokens=usage.prompt_tokens if usage else None,
-            completion_tokens=usage.completion_tokens if usage else None,
-            total_tokens=usage.total_tokens if usage else None,
+            **response_log,
         )
         if "<think>" in content:
             content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
@@ -392,12 +403,19 @@ class LLMService:
 
         for attempt in range(2):
             try:
-                raw_response = await asyncio.to_thread(self._call_llm_sync, prompt)
+                reqid = uuid.uuid4().hex[:8]
+                raw_response = await asyncio.to_thread(
+                    self._call_llm_sync,
+                    prompt,
+                    "classify_task_legacy",
+                    reqid,
+                )
                 raw_response = _strip_code_fences(raw_response)
                 data = json.loads(raw_response)
                 result = TaskClassificationResult.model_validate(data)
                 logger.info(
                     "llm_classification_success",
+                    reqid=reqid,
                     kind=result.kind,
                     confidence=result.confidence,
                     model=self._model,
@@ -437,7 +455,13 @@ Return ONLY valid JSON:
 
         for attempt in range(2):
             try:
-                raw_response = await asyncio.to_thread(self._call_llm_sync, prompt)
+                reqid = uuid.uuid4().hex[:8]
+                raw_response = await asyncio.to_thread(
+                    self._call_llm_sync,
+                    prompt,
+                    "generate_project_description",
+                    reqid,
+                )
                 raw_response = _strip_code_fences(raw_response)
                 data = json.loads(raw_response)
                 description = data.get("description") if isinstance(data, dict) else None
@@ -476,7 +500,13 @@ Return ONLY valid JSON:
         )
         for attempt in range(2):
             try:
-                result = await asyncio.to_thread(self._call_llm_sync, prompt)
+                reqid = uuid.uuid4().hex[:8]
+                result = await asyncio.to_thread(
+                    self._call_llm_sync,
+                    prompt,
+                    "rewrite_title",
+                    reqid,
+                )
                 title = result.strip().strip('"').strip("'")[:500]
                 if title:
                     logger.info("llm_rewrite_success", model=self._model)

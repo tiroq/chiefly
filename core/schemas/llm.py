@@ -43,9 +43,10 @@ class TaskClassificationResult(BaseModel):
 
 
 class NormalizationResult(BaseModel):
-    """Step 1: Raw text → normalized intent."""
+    """Step 1: Raw text → normalized intent + rewritten English title."""
 
     intent_summary: str = Field(min_length=1, max_length=500)
+    rewritten_title: str = Field(default="", max_length=200)
     is_multi_item: bool = False
     entities: list[str] = Field(default_factory=list)
     language: str = Field(default="en", pattern=r"^(ru|en|mixed)$")
@@ -53,6 +54,11 @@ class NormalizationResult(BaseModel):
     @field_validator("intent_summary")
     @classmethod
     def strip_intent(cls, v: str) -> str:
+        return v.strip()
+
+    @field_validator("rewritten_title")
+    @classmethod
+    def strip_rewritten_title(cls, v: str) -> str:
         return v.strip()
 
     @field_validator("entities", mode="before")
