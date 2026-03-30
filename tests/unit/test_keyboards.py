@@ -40,8 +40,12 @@ class TestMainMenuKeyboard:
 
 
 class TestProposalKeyboard:
-    def test_has_5_rows(self):
+    def test_has_4_rows_without_disambiguation(self):
         kb = proposal_keyboard("abc123")
+        assert len(kb.inline_keyboard) == 4
+
+    def test_has_5_rows_with_disambiguation(self):
+        kb = proposal_keyboard("abc123", has_disambiguation=True)
         assert len(kb.inline_keyboard) == 5
 
     def test_confirm_callback_data(self):
@@ -57,12 +61,16 @@ class TestProposalKeyboard:
             f"edit:{short_id}",
             f"change_project:{short_id}",
             f"change_type:{short_id}",
-            f"clarify:{short_id}",
-            f"show_steps:{short_id}",
             f"draft_message:{short_id}",
             f"skip:{short_id}",
             f"discard:{short_id}",
         }.issubset(callbacks)
+
+    def test_contains_clarify_only_when_disambiguation_present(self):
+        short_id = "abc123"
+        kb = proposal_keyboard(short_id, has_disambiguation=True)
+        callbacks = {button.callback_data for row in kb.inline_keyboard for button in row}
+        assert {f"clarify:{short_id}", f"show_steps:{short_id}"}.issubset(callbacks)
 
     def test_pause_button_present(self):
         kb = proposal_keyboard("abc123")

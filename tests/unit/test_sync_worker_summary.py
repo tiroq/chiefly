@@ -57,6 +57,7 @@ async def test_run_sync_sends_summary_message_when_sync_has_updates(
         telegram_bot_token="bot-token",
         telegram_chat_id="chat-id",
         google_tasks_inbox_list_id="inbox-list",
+        default_tasklist_id="inbox-list",
     )
     mock_get_settings.return_value = settings
 
@@ -136,6 +137,7 @@ async def test_run_sync_no_message_when_nothing_changed(
         telegram_bot_token="bot-token",
         telegram_chat_id="chat-id",
         google_tasks_inbox_list_id="inbox-list",
+        default_tasklist_id="inbox-list",
     )
     mock_get_settings.return_value = settings
 

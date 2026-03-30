@@ -594,6 +594,7 @@ class TestSyncWorkerProjectIntegration:
                 telegram_bot_token="token",
                 telegram_chat_id="chat",
                 google_tasks_inbox_list_id="inbox-id",
+                default_tasklist_id="inbox-id",
             )
             mock_settings.return_value = settings
             mock_gts.return_value = MagicMock()

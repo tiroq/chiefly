@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 ReviewQueueService = import_module("apps.api.services.review_queue_service").ReviewQueueService
+SendNextResult = import_module("apps.api.services.review_queue_service").SendNextResult
 
 
 def _make_review_session(**overrides):
@@ -79,7 +80,7 @@ async def test_send_next_returns_false_when_active_review_exists(
 
     result = await service.send_next()
 
-    assert result is False
+    assert result == SendNextResult.ACTIVE_EXISTS
     session_repo.has_active_review.assert_awaited_once()
     session_repo.get_next_queued_for_update.assert_not_called()
     mock_snapshot_repo_cls.assert_not_called()
@@ -103,9 +104,29 @@ async def test_send_next_returns_false_when_queue_is_empty(
 
     result = await service.send_next()
 
-    assert result is False
+    assert result == SendNextResult.QUEUE_EMPTY
     session_repo.get_next_queued_for_update.assert_awaited_once()
     session_repo.get_next_send_failed_for_update.assert_awaited_once()
+    mock_snapshot_repo_cls.assert_not_called()
+    mock_telegram.send_proposal.assert_not_called()
+
+
+@patch("apps.api.services.review_queue_service.TaskSnapshotRepository")
+@patch("apps.api.services.review_queue_service.ReviewSessionRepository")
+@patch("apps.api.services.review_queue_service.is_review_paused", return_value=True)
+@pytest.mark.asyncio
+async def test_send_next_returns_paused_when_queue_is_paused(
+    mock_is_paused,
+    mock_session_repo_cls,
+    mock_snapshot_repo_cls,
+    service,
+    mock_telegram,
+):
+    result = await service.send_next()
+
+    assert result == SendNextResult.PAUSED
+    mock_is_paused.assert_called_once()
+    mock_session_repo_cls.assert_not_called()
     mock_snapshot_repo_cls.assert_not_called()
     mock_telegram.send_proposal.assert_not_called()
 
@@ -149,7 +170,7 @@ async def test_send_next_reads_proposed_changes_and_sends_proposal(
 
     result = await service.send_next()
 
-    assert result is True
+    assert result == SendNextResult.SENT
     assert queued_session.status == "pending"
     assert queued_session.telegram_message_id == 777
     session_repo.save.assert_awaited_once_with(queued_session)
@@ -236,7 +257,7 @@ async def test_send_next_skips_session_with_empty_proposed_changes(
 
     result = await service.send_next()
 
-    assert result is True
+    assert result == SendNextResult.SENT
     assert empty_session.status == "resolved"
     assert valid_session.status == "pending"
     assert session_repo.save.await_count == 2
@@ -306,7 +327,7 @@ async def test_send_next_sends_remaining_queue_notification(
 
     result = await service.send_next()
 
-    assert result is True
+    assert result == SendNextResult.SENT
     mock_telegram.send_text.assert_awaited_once_with(
         "📬 3 more item(s) in queue. Use /next after reviewing."
     )

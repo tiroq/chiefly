@@ -83,7 +83,7 @@ class TestTelegramSendFailure:
     @pytest.mark.asyncio
     async def test_send_next_retries_send_failed_sessions(self, db_session):
         from apps.api.services.review_pause import _reset_cache, set_review_paused
-        from apps.api.services.review_queue_service import ReviewQueueService
+        from apps.api.services.review_queue_service import ReviewQueueService, SendNextResult
         from db.repositories.review_session_repo import ReviewSessionRepository
 
         _reset_cache()
@@ -132,7 +132,7 @@ class TestTelegramSendFailure:
         svc = ReviewQueueService(db_session, mock_telegram)
         result = await svc.send_next()
 
-        assert result is True
+        assert result == SendNextResult.SENT
         mock_telegram.send_proposal.assert_awaited_once()
 
         repo = ReviewSessionRepository(db_session)
