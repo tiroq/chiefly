@@ -39,8 +39,9 @@ You dump anything into a Google Tasks list called **Inbox** — rough notes, voi
                          │
               ┌──────────┴──────────┐
               │   Background Jobs   │  (APScheduler)
-              │  inbox_poll_worker  │
-              │  daily_review_worker│
+              │  sync_worker        │  Poll Google Tasks
+              │  processing_worker  │  LLM classify + queue
+              │  daily_review_worker│  Daily summary
               └──────────┬──────────┘
                          │
         ┌────────────────┼────────────────┐
@@ -52,8 +53,8 @@ You dump anything into a Google Tasks list called **Inbox** — rough notes, voi
         └────────────────┼────────────────┘
                          ▼
               ┌──────────────────────┐
-              │    IntakeService     │  Orchestrates intake
               │  ClassificationSvc  │  LLM + routing
+              │  ReviewQueueService │  Telegram queue
               │  ProjectRoutingSvc  │  Project matching
               │  RevisionService    │  History
               │  DailyReviewService │  Daily summary
@@ -233,6 +234,9 @@ make test-integration
 | `/projects` | List configured projects |
 | `/review` | Generate and send daily review now |
 | `/stats` | Task counts by status |
+| `/pause` | Toggle review queue pause on/off |
+| `/next` | Send next queued proposal |
+| `/backlog` | Show queue status and pending items |
 
 ---
 
