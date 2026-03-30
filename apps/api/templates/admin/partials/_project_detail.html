@@ -23,6 +23,11 @@
     <div>
       <strong>Total Tasks:</strong> <span class="text-muted">{{ result.task_count }}</span>
     </div>
+    <div><strong>Status:</strong> {% if result.project.is_active %}<span class="badge badge-completed">Active</span>{% elif result.project.deleted_at %}<span class="badge badge-error">Deleted</span>{% else %}<span class="badge badge-discarded">Inactive</span>{% endif %}</div>
+    <div><strong>First Seen:</strong> <span class="text-muted">{{ result.project.first_seen_at.strftime('%Y-%m-%d %H:%M') if result.project.first_seen_at else 'N/A' }}</span></div>
+    <div><strong>Last Seen:</strong> <span class="text-muted">{{ result.project.last_seen_at.strftime('%Y-%m-%d %H:%M') if result.project.last_seen_at else 'N/A' }}</span></div>
+    {% if result.project.deleted_at %}<div><strong>Deleted At:</strong> <span class="text-muted">{{ result.project.deleted_at.strftime('%Y-%m-%d %H:%M') }}</span></div>{% endif %}
+    {% if result.project.last_synced_name %}<div><strong>Previous Name:</strong> <span class="text-muted">{{ result.project.last_synced_name }}</span></div>{% endif %}
   </div>
   <div style="margin-top: 1rem;">
     <form hx-post="/admin/projects/{{ result.project.id }}/generate-description"
@@ -66,4 +71,40 @@
       <a href="/admin/tasks?project_id={{ result.project.id }}" class="btn btn-secondary">View All Tasks</a>
     </div>
   </div>
+
+  {% if result.recent_events %}
+  <div class="card">
+    <h2 style="margin-top: 0; margin-bottom: 1rem; font-size: 1.25rem;">Project History</h2>
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Event</th>
+          <th>Details</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for event in result.recent_events %}
+        <tr>
+          <td style="white-space: nowrap;">{{ event.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+          <td>
+            {% if event.event_type == 'project_discovered' %}
+              <span class="badge badge-completed">Discovered</span>
+            {% elif event.event_type == 'project_renamed' %}
+              <span class="badge badge-info" style="background-color: #93c5fd; border: 1px solid #60a5fa;">Renamed</span>
+            {% elif event.event_type == 'project_deleted' %}
+              <span class="badge badge-error">Removed</span>
+            {% elif event.event_type == 'project_reactivated' %}
+              <span class="badge badge-completed">Reactivated</span>
+            {% else %}
+              <span class="badge">{{ event.event_type }}</span>
+            {% endif %}
+          </td>
+          <td>{{ event.message }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
 </div>

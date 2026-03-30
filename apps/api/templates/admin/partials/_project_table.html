@@ -16,7 +16,8 @@
       <strong>Sync complete:</strong>
       {{ sync_result.created|length }} created,
       {{ sync_result.updated|length }} updated,
-      {{ sync_result.skipped|length }} unchanged.
+      {{ sync_result.skipped|length }} unchanged,
+      {{ sync_result.deactivated|length }} removed.
     </p>
   </div>
   {% endif %}
@@ -36,13 +37,20 @@
     </thead>
     <tbody>
       {% for item in result.items %}
-      <tr>
-        <td>{{ item.project.name }}</td>
+      <tr{% if not item.project.is_active %} style="opacity: 0.6;"{% endif %}>
+        <td>
+          {{ item.project.name }}
+          {% if item.project.last_synced_name %}
+          <br><span style="font-size: 0.8rem; color: var(--color-text-muted); font-style: italic;">(was: {{ item.project.last_synced_name }})</span>
+          {% endif %}
+        </td>
         <td><code>{{ item.project.slug }}</code></td>
         <td>{{ item.project.project_type }}</td>
         <td>
           {% if item.project.is_active %}
           <span class="badge badge-completed">Yes</span>
+          {% elif item.project.deleted_at %}
+          <span class="badge badge-error">Deleted</span>
           {% else %}
           <span class="badge badge-discarded">No</span>
           {% endif %}
