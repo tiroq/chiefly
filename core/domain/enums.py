@@ -26,6 +26,9 @@ class ReviewAction(StrEnum):
     CHANGE_TYPE = "change_type"
     DISCARD = "discard"
     SHOW_STEPS = "show_steps"
+    SKIP = "skip"
+    CLARIFY = "clarify"
+    DRAFT_MESSAGE = "draft_message"
 
 
 class ProjectType(StrEnum):
