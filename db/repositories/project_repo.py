@@ -28,6 +28,12 @@ class ProjectRepository:
         result = await self._session.execute(select(Project).order_by(Project.name))
         return list(result.scalars().all())
 
+    async def list_all_including_deleted(self) -> list[Project]:
+        result = await self._session.execute(
+            select(Project).order_by(Project.is_active.desc(), Project.name)
+        )
+        return list(result.scalars().all())
+
     async def get_by_google_tasklist_id(self, tasklist_id: str) -> Project | None:
         result = await self._session.execute(
             select(Project).where(Project.google_tasklist_id == tasklist_id)
