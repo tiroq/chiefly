@@ -27,8 +27,17 @@ async def run_sync() -> None:
             try:
                 await change_monitor.capture_baseline()
 
-                synced = await sync_service.sync_inbox(settings.google_tasks_inbox_list_id)
-                logger.info("sync_worker_complete", synced=synced)
+                summary = await sync_service.sync_all()
+                logger.info(
+                    "sync_worker_complete",
+                    tasklists_scanned=summary.tasklists_scanned,
+                    tasks_scanned=summary.tasks_scanned,
+                    new_count=summary.new_count,
+                    updated_count=summary.updated_count,
+                    moved_count=summary.moved_count,
+                    deleted_count=summary.deleted_count,
+                    queued_count=summary.queued_count,
+                )
 
                 changes = await change_monitor.detect_changes()
                 if changes:
@@ -37,12 +46,14 @@ async def run_sync() -> None:
                     logger.info("sync_worker_alert_sent", alert_result=alert_result)
 
                 change_count = len(changes)
-                if synced > 0 or change_count > 0:
-                    summary = (
-                        f"🔄 Sync complete: {synced} task(s) synced, "
-                        f"{change_count} change(s) detected."
+                if summary.total_synced > 0 or change_count > 0:
+                    msg = (
+                        f"🔄 Sync complete: {summary.tasklists_scanned} list(s) scanned, "
+                        f"{summary.tasks_scanned} task(s) seen, "
+                        f"{summary.new_count} new, {summary.updated_count} updated, "
+                        f"{summary.moved_count} moved, {summary.deleted_count} deleted."
                     )
-                    await telegram.send_text(summary)
+                    await telegram.send_text(msg)
 
             except Exception as e:
                 logger.error("sync_worker_failed", error=str(e))

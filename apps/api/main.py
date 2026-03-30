@@ -72,7 +72,7 @@ async def lifespan(app: FastAPI):
 
     # Set up scheduler
     scheduler = setup_scheduler(
-        poll_interval_seconds=settings.inbox_poll_interval_seconds,
+        poll_interval_seconds=settings.effective_sync_interval,
         processing_interval_seconds=settings.processing_interval_seconds,
         daily_review_cron=settings.daily_review_cron,
         project_sync_cron=settings.project_sync_cron,

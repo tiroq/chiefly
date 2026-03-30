@@ -58,6 +58,7 @@ class ProcessingStatus(StrEnum):
 class ProcessingReason(StrEnum):
     NEW_TASK = "new_task_detected"
     SOURCE_CHANGED = "source_task_changed"
+    TASK_MOVED = "task_moved_to_different_list"
     MANUAL_REPROCESS = "manual_reprocess_requested"
     PROMPT_VERSION_CHANGED = "prompt_version_changed"
     CLASSIFICATION_FAILED = "classification_failed"

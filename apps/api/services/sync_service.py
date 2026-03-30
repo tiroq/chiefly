@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import uuid
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,6 +29,44 @@ def compute_content_hash(title: str, notes: str | None) -> str:
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
+@dataclass
+class TaskListSyncResult:
+    """Per-tasklist sync result."""
+
+    tasklist_id: str
+    tasklist_title: str
+    tasks_seen: int = 0
+    new_count: int = 0
+    updated_count: int = 0
+    moved_count: int = 0
+
+
+@dataclass
+class SyncCycleSummary:
+    """Full sync cycle summary across all task lists."""
+
+    tasklists_scanned: int = 0
+    tasks_scanned: int = 0
+    new_count: int = 0
+    updated_count: int = 0
+    moved_count: int = 0
+    deleted_count: int = 0
+    queued_count: int = 0
+    tasklist_results: list[TaskListSyncResult] = field(default_factory=list)
+
+    def add_tasklist_result(self, result: TaskListSyncResult) -> None:
+        self.tasklist_results.append(result)
+        self.tasklists_scanned += 1
+        self.tasks_scanned += result.tasks_seen
+        self.new_count += result.new_count
+        self.updated_count += result.updated_count
+        self.moved_count += result.moved_count
+
+    @property
+    def total_synced(self) -> int:
+        return self.new_count + self.updated_count + self.moved_count
+
+
 class SyncService:
     def __init__(
         self,
@@ -37,22 +76,104 @@ class SyncService:
         self._session = session
         self._google_tasks = google_tasks
 
-    async def sync_inbox(self, inbox_list_id: str) -> int:
-        gtasks = self._google_tasks.list_tasks(inbox_list_id)
-        logger.info("sync_inbox_start", count=len(gtasks), tasklist_id=inbox_list_id)
+    async def sync_all(self) -> SyncCycleSummary:
+        """Sync all Google Tasks task lists and their tasks."""
+        tasklists = self._google_tasks.list_tasklists()
+        logger.info("sync_cycle_start", tasklists=len(tasklists))
 
         source_repo = SourceTaskRepository(self._session)
         queue_repo = ProcessingQueueRepository(self._session)
         record_repo = TaskRecordRepository(self._session)
         snapshot_repo = TaskSnapshotRepository(self._session)
 
-        synced = 0
-        seen_stable_ids: set[uuid.UUID] = set()
+        summary = SyncCycleSummary()
+        all_seen_stable_ids: set[uuid.UUID] = set()
+
+        for tl in tasklists:
+            tasklist_id = tl["id"]
+            tasklist_title = tl.get("title", "")
+
+            result = await self._sync_tasklist(
+                tasklist_id=tasklist_id,
+                tasklist_title=tasklist_title,
+                source_repo=source_repo,
+                queue_repo=queue_repo,
+                record_repo=record_repo,
+                snapshot_repo=snapshot_repo,
+                all_seen_stable_ids=all_seen_stable_ids,
+            )
+            summary.add_tasklist_result(result)
+
+        # --- Missing / deleted detection across all lists ---
+        deleted_count = await self._detect_missing(record_repo, all_seen_stable_ids)
+        summary.deleted_count = deleted_count
+        summary.queued_count = summary.new_count + summary.updated_count + summary.moved_count
+
+        await self._session.commit()
+        logger.info(
+            "sync_cycle_complete",
+            tasklists_scanned=summary.tasklists_scanned,
+            tasks_scanned=summary.tasks_scanned,
+            new_count=summary.new_count,
+            updated_count=summary.updated_count,
+            moved_count=summary.moved_count,
+            deleted_count=summary.deleted_count,
+            queued_count=summary.queued_count,
+        )
+        return summary
+
+    async def sync_inbox(self, inbox_list_id: str) -> int:
+        """Backward-compatible single-list sync. Syncs one tasklist and returns synced count."""
+        source_repo = SourceTaskRepository(self._session)
+        queue_repo = ProcessingQueueRepository(self._session)
+        record_repo = TaskRecordRepository(self._session)
+        snapshot_repo = TaskSnapshotRepository(self._session)
+
+        all_seen_stable_ids: set[uuid.UUID] = set()
+
+        result = await self._sync_tasklist(
+            tasklist_id=inbox_list_id,
+            tasklist_title="Inbox",
+            source_repo=source_repo,
+            queue_repo=queue_repo,
+            record_repo=record_repo,
+            snapshot_repo=snapshot_repo,
+            all_seen_stable_ids=all_seen_stable_ids,
+        )
+
+        await self._detect_missing(record_repo, all_seen_stable_ids)
+        await self._session.commit()
+        return result.new_count + result.updated_count + result.moved_count
+
+    async def _sync_tasklist(
+        self,
+        tasklist_id: str,
+        tasklist_title: str,
+        source_repo: SourceTaskRepository,
+        queue_repo: ProcessingQueueRepository,
+        record_repo: TaskRecordRepository,
+        snapshot_repo: TaskSnapshotRepository,
+        all_seen_stable_ids: set[uuid.UUID],
+    ) -> TaskListSyncResult:
+        """Sync a single tasklist. Shared logic for sync_all() and sync_inbox()."""
+        gtasks = self._google_tasks.list_tasks(tasklist_id)
+        logger.info(
+            "sync_tasklist_start",
+            tasklist_id=tasklist_id,
+            tasklist_title=tasklist_title,
+            count=len(gtasks),
+        )
+
+        result = TaskListSyncResult(
+            tasklist_id=tasklist_id,
+            tasklist_title=tasklist_title,
+        )
 
         for gtask in gtasks:
             if not gtask.title:
                 continue
 
+            result.tasks_seen += 1
             content_hash = compute_content_hash(gtask.title, gtask.notes)
             google_updated_at = self._parse_google_timestamp(gtask.updated)
             raw_payload = gtask.raw_payload or self._build_payload(gtask)
@@ -60,50 +181,90 @@ class SyncService:
 
             # --- Dual-write: source_tasks (backward compat) ---
             source_task = await self._sync_source_task(
-                source_repo, gtask, inbox_list_id, content_hash, google_updated_at
+                source_repo, gtask, tasklist_id, content_hash, google_updated_at
             )
 
-            # --- New path: task_records + task_snapshots ---
-            existing_record = await record_repo.get_by_pointer(inbox_list_id, gtask.id)
+            # --- task_records + task_snapshots ---
+            existing_record = await record_repo.get_by_pointer(tasklist_id, gtask.id)
 
             if existing_record is None:
-                stable_id, state = self._resolve_identity(envelope)
-                record = await record_repo.create(
-                    stable_id=stable_id,
-                    state=state,
-                    processing_status=WorkflowStatus.PENDING,
-                    current_tasklist_id=inbox_list_id,
-                    current_task_id=gtask.id,
-                )
-                record_stable_id = record.stable_id
-
-                await snapshot_repo.create(
-                    tasklist_id=inbox_list_id,
-                    task_id=gtask.id,
-                    payload=raw_payload,
-                    content_hash=content_hash,
-                    stable_id=record_stable_id,
-                    google_updated=gtask.updated,
+                # Check if this task moved from a different list
+                moved_record = await self._find_moved_record(
+                    record_repo, snapshot_repo, gtask, tasklist_id
                 )
 
-                reason = ProcessingReason.NEW_TASK
-                _ = await queue_repo.enqueue_by_stable_id(
-                    stable_id=record_stable_id,
-                    source_task_id=source_task.id,
-                    reason=reason,
-                )
-                synced += 1
-                seen_stable_ids.add(record_stable_id)
-                logger.info(
-                    "sync_new_task",
-                    google_task_id=gtask.id,
-                    stable_id=str(record_stable_id),
-                    state=state.value,
-                )
+                if moved_record is not None:
+                    # Task moved from another tasklist
+                    record_stable_id = moved_record.stable_id
+                    all_seen_stable_ids.add(record_stable_id)
+
+                    await record_repo.update_pointer(
+                        record_stable_id, tasklist_id, gtask.id, gtask.updated
+                    )
+                    await record_repo.mark_seen(record_stable_id)
+                    await record_repo.reset_misses(record_stable_id)
+
+                    await snapshot_repo.create(
+                        tasklist_id=tasklist_id,
+                        task_id=gtask.id,
+                        payload=raw_payload,
+                        content_hash=content_hash,
+                        stable_id=record_stable_id,
+                        google_updated=gtask.updated,
+                    )
+                    _ = await queue_repo.enqueue_by_stable_id(
+                        stable_id=record_stable_id,
+                        source_task_id=source_task.id,
+                        reason=ProcessingReason.TASK_MOVED,
+                    )
+                    result.moved_count += 1
+                    logger.info(
+                        "sync_task_moved",
+                        google_task_id=gtask.id,
+                        stable_id=str(record_stable_id),
+                        from_tasklist=moved_record.current_tasklist_id,
+                        to_tasklist=tasklist_id,
+                    )
+                else:
+                    # Genuinely new task
+                    stable_id, state = self._resolve_identity(envelope)
+                    record = await record_repo.create(
+                        stable_id=stable_id,
+                        state=state,
+                        processing_status=WorkflowStatus.PENDING,
+                        current_tasklist_id=tasklist_id,
+                        current_task_id=gtask.id,
+                    )
+                    record_stable_id = record.stable_id
+
+                    await snapshot_repo.create(
+                        tasklist_id=tasklist_id,
+                        task_id=gtask.id,
+                        payload=raw_payload,
+                        content_hash=content_hash,
+                        stable_id=record_stable_id,
+                        google_updated=gtask.updated,
+                    )
+
+                    reason = ProcessingReason.NEW_TASK
+                    _ = await queue_repo.enqueue_by_stable_id(
+                        stable_id=record_stable_id,
+                        source_task_id=source_task.id,
+                        reason=reason,
+                    )
+                    result.new_count += 1
+                    all_seen_stable_ids.add(record_stable_id)
+                    logger.info(
+                        "sync_new_task",
+                        google_task_id=gtask.id,
+                        stable_id=str(record_stable_id),
+                        state=state.value,
+                        tasklist_id=tasklist_id,
+                    )
 
             else:
                 record_stable_id = existing_record.stable_id
-                seen_stable_ids.add(record_stable_id)
+                all_seen_stable_ids.add(record_stable_id)
 
                 await record_repo.mark_seen(record_stable_id)
                 await record_repo.reset_misses(record_stable_id)
@@ -125,7 +286,7 @@ class SyncService:
 
                 if old_hash != content_hash:
                     await snapshot_repo.create(
-                        tasklist_id=inbox_list_id,
+                        tasklist_id=tasklist_id,
                         task_id=gtask.id,
                         payload=raw_payload,
                         content_hash=content_hash,
@@ -137,31 +298,68 @@ class SyncService:
                         source_task_id=source_task.id,
                         reason=ProcessingReason.SOURCE_CHANGED,
                     )
-                    synced += 1
+                    result.updated_count += 1
                     logger.info(
                         "sync_changed_task",
                         google_task_id=gtask.id,
                         stable_id=str(record_stable_id),
                         old_hash=old_hash,
                         new_hash=content_hash,
+                        tasklist_id=tasklist_id,
                     )
                 else:
                     await record_repo.update_pointer(
-                        record_stable_id, inbox_list_id, gtask.id, gtask.updated
+                        record_stable_id, tasklist_id, gtask.id, gtask.updated
                     )
 
-        # --- Missing detection ---
-        await self._detect_missing(record_repo, seen_stable_ids)
+        logger.info(
+            "sync_tasklist_complete",
+            tasklist_id=tasklist_id,
+            tasklist_title=tasklist_title,
+            tasks_seen=result.tasks_seen,
+            new_count=result.new_count,
+            updated_count=result.updated_count,
+            moved_count=result.moved_count,
+        )
+        return result
 
-        await self._session.commit()
-        logger.info("sync_inbox_complete", synced=synced, total_seen=len(seen_stable_ids))
-        return synced
+    async def _find_moved_record(
+        self,
+        record_repo: TaskRecordRepository,
+        snapshot_repo: TaskSnapshotRepository,
+        gtask: GoogleTask,
+        current_tasklist_id: str,
+    ) -> object | None:
+        """
+        Check if a task that appears new in current_tasklist_id actually moved
+        from a different list. We match by content hash against existing records
+        whose pointer points to a different tasklist.
+        """
+        content_hash = compute_content_hash(gtask.title, gtask.notes)
+
+        # Look for a record with the same google_task_id on a different list.
+        # Google Tasks keeps task IDs unique within a user account when tasks
+        # are moved via the UI (drag between lists). If the ID doesn't match,
+        # this is a genuinely new task.
+        #
+        # We cannot just search by content hash because different tasks could
+        # have the same title/notes. Instead we rely on a pragmatic heuristic:
+        # if a task with the same google_task_id was tracked on a different list
+        # and is now missing there, it's a move.
+        tracked = await record_repo.list_active_and_missing()
+        for record in tracked:
+            if (
+                record.current_task_id == gtask.id
+                and record.current_tasklist_id != current_tasklist_id
+            ):
+                return record
+        return None
 
     async def _sync_source_task(
         self,
         source_repo: SourceTaskRepository,
         gtask: GoogleTask,
-        inbox_list_id: str,
+        tasklist_id: str,
         content_hash: str,
         google_updated_at: datetime | None,
     ) -> SourceTask:
@@ -170,7 +368,7 @@ class SyncService:
             source_task = SourceTask(
                 id=uuid.uuid4(),
                 google_task_id=gtask.id,
-                google_tasklist_id=inbox_list_id,
+                google_tasklist_id=tasklist_id,
                 title_raw=gtask.title,
                 notes_raw=gtask.notes,
                 google_status=gtask.status,
@@ -185,6 +383,7 @@ class SyncService:
             existing.google_status = gtask.status
             existing.google_updated_at = google_updated_at
             existing.content_hash = content_hash
+            existing.google_tasklist_id = tasklist_id
             existing.synced_at = datetime.now(tz=timezone.utc)
             _ = await source_repo.upsert(existing)
             return existing
@@ -205,7 +404,9 @@ class SyncService:
         self,
         record_repo: TaskRecordRepository,
         seen_stable_ids: set[uuid.UUID],
-    ) -> None:
+    ) -> int:
+        """Detect missing/deleted tasks. Returns count of newly deleted records."""
+        deleted_count = 0
         tracked = await record_repo.list_active_and_missing()
         for record in tracked:
             if record.stable_id in seen_stable_ids:
@@ -215,6 +416,7 @@ class SyncService:
 
             if miss_count >= MISSING_THRESHOLD:
                 await record_repo.update_state(record.stable_id, TaskRecordState.DELETED)
+                deleted_count += 1
                 logger.info(
                     "sync_task_deleted",
                     stable_id=str(record.stable_id),
@@ -227,6 +429,7 @@ class SyncService:
                     stable_id=str(record.stable_id),
                     miss_count=miss_count,
                 )
+        return deleted_count
 
     def _build_payload(self, gtask: GoogleTask) -> dict[str, object]:
         payload: dict[str, object] = {"id": gtask.id, "title": gtask.title, "status": gtask.status}

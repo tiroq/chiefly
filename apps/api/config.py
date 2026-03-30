@@ -20,7 +20,15 @@ class Settings(BaseSettings):
     llm_api_key: str = ""
     llm_base_url: str = ""
 
-    inbox_poll_interval_seconds: int = 60
+    sync_poll_interval_seconds: int = 60
+    inbox_poll_interval_seconds: int | None = None
+
+    @property
+    def effective_sync_interval(self) -> int:
+        if self.inbox_poll_interval_seconds is not None:
+            return self.inbox_poll_interval_seconds
+        return self.sync_poll_interval_seconds
+
     processing_interval_seconds: int = 10
     daily_review_cron: str = "0 9 * * *"
     project_sync_cron: str = "0 * * * *"

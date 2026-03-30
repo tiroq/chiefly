@@ -48,23 +48,27 @@ async def get_latest_review(
     return DailyReviewResponse.model_validate(review)
 
 
-@router.post("/poll-inbox-now")
-async def poll_inbox_now() -> dict[str, str]:
-    """Manually trigger an inbox poll."""
+@router.post("/sync-now")
+async def sync_now() -> dict[str, str]:
+    """Manually trigger a full task sync."""
     from apps.api.services.scheduler_service import get_scheduler
+    import datetime
 
     scheduler = get_scheduler()
-    job = scheduler.get_job("inbox_poll")
+    job = scheduler.get_job("task_sync")
     if job:
-        scheduler.modify_job("inbox_poll", next_run_time=None)
-        from apscheduler.util import datetime_to_utc_timestamp
-        import datetime
-
+        scheduler.modify_job("task_sync", next_run_time=None)
         scheduler.modify_job(
-            "inbox_poll",
+            "task_sync",
             next_run_time=datetime.datetime.now(datetime.timezone.utc),
         )
     return {"status": "triggered"}
+
+
+@router.post("/poll-inbox-now")
+async def poll_inbox_now() -> dict[str, str]:
+    """Backward-compatible alias for /sync-now."""
+    return await sync_now()
 
 
 @router.post("/send-review-now")

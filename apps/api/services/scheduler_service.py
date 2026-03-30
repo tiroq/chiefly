@@ -34,7 +34,7 @@ def setup_scheduler(
     scheduler.add_job(
         poll_job,
         trigger=IntervalTrigger(seconds=poll_interval_seconds),
-        id="inbox_poll",
+        id="task_sync",
         replace_existing=True,
         coalesce=True,
         max_instances=1,
