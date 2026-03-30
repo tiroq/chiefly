@@ -36,6 +36,14 @@ async def run_sync() -> None:
                     alert_result = await alert_service.alert_task_changes(changes, operation="sync")
                     logger.info("sync_worker_alert_sent", alert_result=alert_result)
 
+                change_count = len(changes)
+                if synced > 0 or change_count > 0:
+                    summary = (
+                        f"🔄 Sync complete: {synced} task(s) synced, "
+                        f"{change_count} change(s) detected."
+                    )
+                    await telegram.send_text(summary)
+
             except Exception as e:
                 logger.error("sync_worker_failed", error=str(e))
                 await session.rollback()
