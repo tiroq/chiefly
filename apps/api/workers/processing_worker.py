@@ -366,6 +366,29 @@ async def _process_entry(
     queue_svc = ReviewQueueService(session, telegram)
     try:
         await queue_svc.send_next()
+    except Exception as send_err:
+        logger.error(
+            "processing_telegram_send_failed",
+            entry_id=str(entry_id),
+            stable_id=str(stable_id),
+            error=str(send_err),
+        )
+        review_session.status = "send_failed"
+        await review_repo.save(review_session)
+        from db.models.system_event import SystemEvent
+
+        event = SystemEvent(
+            event_type="telegram_send_failed",
+            severity="error",
+            subsystem="processing",
+            stable_id=stable_id,
+            message=f"Telegram send failed after review session creation: {send_err}",
+        )
+        from db.repositories.system_event_repo import SystemEventRepo
+
+        event_repo = SystemEventRepo(session)
+        await event_repo.create(event)
+        await session.commit()
     finally:
         await telegram.aclose()
 
