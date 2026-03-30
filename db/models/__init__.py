@@ -1,3 +1,4 @@
+from db.models.app_setting import AppSetting
 from db.models.daily_review_snapshot import DailyReviewSnapshot
 from db.models.processing_lock import ProcessingLock
 from db.models.project import Project
@@ -13,6 +14,7 @@ from db.models.task_snapshot import TaskSnapshot
 from db.models.telegram_review_session import TelegramReviewSession
 
 __all__ = [
+    "AppSetting",
     "Project",
     "ProjectAlias",
     "ProjectPromptVersion",
