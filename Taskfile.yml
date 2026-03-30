@@ -44,7 +44,7 @@ tasks:
 
   lint:
     desc: Run ruff linter
-    aliases: [l]
+    # aliases: [l]
     cmds:
       - .venv/bin/ruff check .
 
@@ -102,7 +102,7 @@ tasks:
 
   docker:logs:
     desc: Tail Docker service logs
-    aliases: [logs]
+    aliases: [logs, log, l]
     cmds:
       - docker compose -f infra/docker/docker-compose.yml logs -f
 
