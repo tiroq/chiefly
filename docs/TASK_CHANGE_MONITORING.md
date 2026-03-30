@@ -145,7 +145,7 @@ All changes are logged with:
 - `event_type` - Type of change (e.g., "task_created", "task_moved_to_project")
 - `severity` - "info", "warning", or "error"
 - `subsystem` - "task_monitor"
-- `task_item_id` - Link to affected task
+- `stable_id` - Link to affected task
 - `project_id` - Link to affected project
 - `message` - Human-readable description
 - `payload_json` - Detailed change information including before/after snapshots
@@ -158,7 +158,7 @@ All changes are logged with:
 events = await system_event_repo.list_events(event_type="task_created")
 
 # Get all changes for a specific task
-events = await system_event_repo.list_events(task_item_id=task_id)
+events = await system_event_repo.list_events(stable_id=task_id)
 
 # Get all changes for a specific project
 events = await system_event_repo.list_events(project_id=project_id)
