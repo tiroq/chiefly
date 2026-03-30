@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-import json
-import asyncio
+import re
 import uuid
 from datetime import datetime, timezone
 from typing import TypedDict
@@ -10,7 +9,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.logging import get_logger
 from apps.api.services.google_tasks_service import GoogleTasksService
-from apps.api.services.llm_service import LLMService
 from core.domain.enums import ProjectType
 from core.utils.text import slugify
 from db.models.project import Project
@@ -18,16 +16,15 @@ from db.repositories.project_repo import ProjectRepository
 
 logger = get_logger(__name__)
 
-_ALL_TYPES = list(ProjectType)
-
-_TYPE_CLASSIFY_PROMPT = """Classify a Google Tasks list into a project type.
-
-List name: "{name}"
-
-Available types:
-{types}
-
-Return ONLY valid JSON: {{"recommended_type": "<type value>", "reasoning": "<brief>"}}"""
+# Keyword-based project type classification.
+# Sync must be read-only with no LLM calls (ARCHITECTURE_CONTRACT).
+_TYPE_KEYWORDS: list[tuple[re.Pattern[str], ProjectType]] = [
+    (re.compile(r"\b(client|customer|freelance|contract)\b", re.I), ProjectType.CLIENT),
+    (re.compile(r"\b(family|home|house|kids?|partner)\b", re.I), ProjectType.FAMILY),
+    (re.compile(r"\b(ops|devops|infra|deploy|server|monitoring)\b", re.I), ProjectType.OPS),
+    (re.compile(r"\b(writ(e|ing)|blog|article|newsletter|draft)\b", re.I), ProjectType.WRITING),
+    (re.compile(r"\b(internal|admin|backoffice|tooling)\b", re.I), ProjectType.INTERNAL),
+]
 
 
 class ProjectSyncResult(TypedDict):
@@ -42,28 +39,21 @@ class ProjectSyncService:
         self,
         google_tasks: GoogleTasksService,
         project_repo: ProjectRepository,
-        llm: LLMService | None = None,
     ) -> None:
         self._google_tasks = google_tasks
         self._project_repo = project_repo
-        self._llm = llm
 
-    async def _classify_type(self, name: str) -> ProjectType:
-        """Use LLM to classify the project type; fall back to PERSONAL."""
-        if self._llm is None:
-            return ProjectType.PERSONAL
-        types_block = "\n".join(f"- {t.value}" for t in _ALL_TYPES)
-        prompt = _TYPE_CLASSIFY_PROMPT.format(name=name, types=types_block)
-        try:
-            raw = await asyncio.to_thread(self._llm._call_llm_sync, prompt)
-            raw = raw.strip()
-            if raw.startswith("```"):
-                raw = "\n".join(raw.split("\n")[1:-1])
-            data = json.loads(raw)
-            return ProjectType(data.get("recommended_type", "personal"))
-        except Exception as e:
-            logger.warning("project_type_classify_failed", name=name, error=str(e))
-            return ProjectType.PERSONAL
+    @staticmethod
+    def _classify_type(name: str) -> ProjectType:
+        """Classify project type from list name using keyword heuristics.
+
+        No LLM call — sync must stay read-only per ARCHITECTURE_CONTRACT.
+        Falls back to PERSONAL when no keywords match.
+        """
+        for pattern, project_type in _TYPE_KEYWORDS:
+            if pattern.search(name):
+                return project_type
+        return ProjectType.PERSONAL
 
     async def sync_from_google(
         self,
@@ -110,7 +100,11 @@ class ProjectSyncService:
                 if await self._project_repo.get_by_slug(slug) is not None:
                     slug = f"{slug}-{tl_id[:6].lower()}"
 
-                project_type = ProjectType.PERSONAL if tl_id == inbox_list_id else await self._classify_type(tl_title)
+                project_type = (
+                    ProjectType.PERSONAL
+                    if tl_id == inbox_list_id
+                    else self._classify_type(tl_title)
+                )
                 project = Project(
                     id=uuid.uuid4(),
                     name=tl_title,
@@ -143,4 +137,9 @@ class ProjectSyncService:
             deactivated=len(deactivated),
             skipped=len(skipped),
         )
-        return {"created": created, "updated": updated, "deactivated": deactivated, "skipped": skipped}
+        return {
+            "created": created,
+            "updated": updated,
+            "deactivated": deactivated,
+            "skipped": skipped,
+        }

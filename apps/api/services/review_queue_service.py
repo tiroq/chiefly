@@ -6,6 +6,7 @@ from typing import TypedDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.logging import get_logger
+from apps.api.services.review_pause import is_review_paused
 from apps.api.services.telegram_service import TelegramService
 from core.domain.enums import ConfidenceBand, TaskKind
 from core.schemas.llm import TaskClassificationResult
@@ -32,6 +33,10 @@ class ReviewQueueService:
 
     async def send_next(self) -> bool:
         session_repo = ReviewSessionRepository(self._session)
+
+        if is_review_paused():
+            logger.info("review_queue_paused_skip_send_next")
+            return False
 
         if await session_repo.has_active_review():
             return False
@@ -87,6 +92,7 @@ class ReviewQueueService:
             raw_text=raw_text,
             classification=classification,
             project_name=proposed.get("project_name"),
+            queue_position=1,
         )
 
         next_item.status = "pending"

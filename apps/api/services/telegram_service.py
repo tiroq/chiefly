@@ -33,6 +33,7 @@ def _build_proposal_text(
     raw_text: str,
     classification: TaskClassificationResult,
     project_name: str | None,
+    queue_position: int | None = None,
 ) -> str:
     conf_emoji = CONFIDENCE_EMOJI.get(classification.confidence, "⚪")
     kind_label = KIND_LABELS.get(classification.kind, classification.kind)
@@ -61,6 +62,8 @@ def _build_proposal_text(
     if safe_due_hint:
         lines.append(f"  Due: {safe_due_hint}")
     lines.append(f"  Confidence: {conf_emoji} {classification.confidence.capitalize()}")
+    if queue_position is not None:
+        lines.append(f"📋 Queue position: {queue_position}")
 
     if classification.ambiguities:
         lines.append("")
@@ -107,10 +110,16 @@ class TelegramService:
         raw_text: str,
         classification: TaskClassificationResult,
         project_name: str | None,
+        queue_position: int | None = None,
     ) -> int:
         from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-        text = _build_proposal_text(raw_text, classification, project_name)
+        text = _build_proposal_text(
+            raw_text,
+            classification,
+            project_name,
+            queue_position=queue_position,
+        )
         short_id = task_id.replace("-", "")
 
         buttons = [
