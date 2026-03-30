@@ -112,11 +112,11 @@ cp .env.example .env
 | `TELEGRAM_BOT_TOKEN` | Bot token from BotFather |
 | `TELEGRAM_CHAT_ID` | Your personal Telegram chat ID |
 | `GOOGLE_CREDENTIALS_FILE` | Path to Google service account JSON |
-| `GOOGLE_TASKS_INBOX_LIST_ID` | Google Tasks list ID for inbox |
+| `GOOGLE_TASKS_DEFAULT_TASKLIST_ID` | Google Tasks default list ID (replaces `GOOGLE_TASKS_INBOX_LIST_ID`) |
 | `LLM_PROVIDER` | `openai` (or compatible) |
 | `LLM_MODEL` | e.g. `gpt-4o` |
 | `LLM_API_KEY` | Your LLM API key |
-| `INBOX_POLL_INTERVAL_SECONDS` | Polling interval (default: 60) |
+| `SYNC_INTERVAL_SECONDS` | Sync polling interval in seconds (default: 60, replaces `INBOX_POLL_INTERVAL_SECONDS`) |
 | `DAILY_REVIEW_CRON` | Cron expression (default: `0 9 * * *`) |
 | `TIMEZONE` | Your timezone (e.g. `Europe/Moscow`) |
 
@@ -218,7 +218,7 @@ make test-integration
 | GET | `/health/ready` | Readiness check (DB ping) |
 | GET | `/admin/tasks/{task_id}` | Get task by ID |
 | GET | `/admin/reviews/latest` | Get latest daily review |
-| POST | `/admin/poll-inbox-now` | Trigger inbox poll manually |
+| POST | `/admin/poll-inbox-now` | Trigger sync manually (deprecated alias — use `/admin/sync-now`) |
 | POST | `/admin/send-review-now` | Trigger daily review manually |
 
 ---
