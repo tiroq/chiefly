@@ -147,7 +147,7 @@ class PipelineResult(BaseModel):
     """Final combined output of the multi-step LLM pipeline.
 
     Designed to be backward-compatible: can produce a TaskClassificationResult
-    via to_legacy() for existing consumers (IntakeService, RevisionService, etc.).
+    via to_legacy() for existing consumers (RevisionService, etc.).
     """
 
     type: TaskKind
