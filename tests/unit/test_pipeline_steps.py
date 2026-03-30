@@ -103,7 +103,7 @@ class TestClassifyRouteTitleStep:
         svc = _make_service()
         captured_prompts = []
 
-        def capture_prompt(prompt):
+        def capture_prompt(prompt, *args, **kwargs):
             captured_prompts.append(prompt)
             return json.dumps(
                 {
@@ -130,7 +130,7 @@ class TestClassifyRouteTitleStep:
         svc = _make_service()
         call_count = 0
 
-        def flaky(prompt):
+        def flaky(prompt, *args, **kwargs):
             nonlocal call_count
             call_count += 1
             if call_count == 1:
@@ -248,7 +248,7 @@ class TestRunPipeline:
         svc = _make_service()
         call_count = 0
 
-        def mock_llm(prompt):
+        def mock_llm(prompt, *args, **kwargs):
             nonlocal call_count
             call_count += 1
             if call_count == 1:
@@ -271,7 +271,8 @@ class TestRunPipeline:
                         "next_action": "Make a shopping list",
                     }
                 )
-            return "{}"
+            # call_count == 3: description step (always runs)
+            return json.dumps({"description": "auto-generated"})
 
         with patch.object(svc, "_call_llm_sync", side_effect=mock_llm):
             result = await svc.run_pipeline(
@@ -282,14 +283,14 @@ class TestRunPipeline:
         assert result.project == "Personal"
         assert result.title == "Buy groceries from store"
         assert result.intent_summary == "Buy groceries"
-        assert call_count == 2
+        assert call_count == 3
 
     @pytest.mark.asyncio
     async def test_pipeline_with_description_and_steps(self):
         svc = _make_service()
         call_count = 0
 
-        def mock_llm(prompt):
+        def mock_llm(prompt, *args, **kwargs):
             nonlocal call_count
             call_count += 1
             if call_count == 1:
@@ -334,7 +335,7 @@ class TestRunPipeline:
         svc = _make_service()
         call_count = 0
 
-        def mock_llm(prompt):
+        def mock_llm(prompt, *args, **kwargs):
             nonlocal call_count
             call_count += 1
             if call_count == 1:
@@ -366,7 +367,8 @@ class TestRunPipeline:
                         ]
                     }
                 )
-            return "{}"
+            # call 4: description step (always runs)
+            return json.dumps({"description": "auto-generated"})
 
         with patch.object(svc, "_call_llm_sync", side_effect=mock_llm):
             result = await svc.run_pipeline(
@@ -375,14 +377,14 @@ class TestRunPipeline:
             )
         assert result.confidence == ConfidenceBand.LOW
         assert len(result.disambiguation_options) == 2
-        assert call_count == 3
+        assert call_count == 4
 
     @pytest.mark.asyncio
     async def test_pipeline_classify_failure_returns_fallback(self):
         svc = _make_service()
         call_count = 0
 
-        def mock_llm(prompt):
+        def mock_llm(prompt, *args, **kwargs):
             nonlocal call_count
             call_count += 1
             if call_count <= 2:

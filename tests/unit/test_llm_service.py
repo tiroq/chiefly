@@ -67,7 +67,7 @@ class TestLLMServiceClassify:
         svc = self._make_service()
         call_count = 0
 
-        def failing_llm(prompt):
+        def failing_llm(prompt, *args, **kwargs):
             nonlocal call_count
             call_count += 1
             raise Exception("oops")
@@ -82,7 +82,7 @@ class TestLLMServiceClassify:
         svc = self._make_service()
         call_count = 0
 
-        def flaky_llm(prompt):
+        def flaky_llm(prompt, *args, **kwargs):
             nonlocal call_count
             call_count += 1
             if call_count == 1:

@@ -22,6 +22,8 @@ def mock_google_tasks() -> Any:
 def mock_project_repo() -> Any:
     repo = MagicMock()
     repo.get_by_google_tasklist_id = AsyncMock(return_value=None)
+    repo.get_by_slug = AsyncMock(return_value=None)
+    repo.list_all = AsyncMock(return_value=[])
     repo.create = AsyncMock()
     repo.save = AsyncMock()
     return repo
@@ -68,7 +70,7 @@ class TestSyncFromGoogle:
 
         result = await service.sync_from_google(mock_session, inbox_list_id="inbox-list")
 
-        assert result == {"created": ["Finance"], "updated": [], "skipped": []}
+        assert result == {"created": ["Finance"], "updated": [], "deactivated": [], "skipped": []}
         mock_project_repo.get_by_google_tasklist_id.assert_awaited_once_with("list-1")
         mock_project_repo.create.assert_awaited_once()
         created_project = mock_project_repo.create.await_args.args[0]
@@ -95,7 +97,7 @@ class TestSyncFromGoogle:
 
         result = await service.sync_from_google(mock_session, inbox_list_id="inbox-list")
 
-        assert result == {"created": [], "updated": ["New Name"], "skipped": []}
+        assert result == {"created": [], "updated": ["New Name"], "deactivated": [], "skipped": []}
         assert existing.name == "New Name"
         assert existing.slug == slugify("New Name")
         mock_project_repo.save.assert_awaited_once_with(existing)
@@ -117,12 +119,12 @@ class TestSyncFromGoogle:
 
         result = await service.sync_from_google(mock_session, inbox_list_id="inbox-list")
 
-        assert result == {"created": [], "updated": [], "skipped": ["Fitness"]}
+        assert result == {"created": [], "updated": [], "deactivated": [], "skipped": ["Fitness"]}
         mock_project_repo.save.assert_not_awaited()
         mock_project_repo.create.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_sync_skips_inbox_tasklist(
+    async def test_sync_creates_inbox_as_personal_project(
         self,
         service: ProjectSyncService,
         mock_google_tasks: Any,
@@ -136,9 +138,9 @@ class TestSyncFromGoogle:
 
         result = await service.sync_from_google(mock_session, inbox_list_id="inbox-list")
 
-        assert result["skipped"] == ["Inbox"]
-        assert result["created"] == ["Work"]
-        mock_project_repo.get_by_google_tasklist_id.assert_awaited_once_with("list-3")
+        assert "Inbox" in result["created"]
+        assert "Work" in result["created"]
+        assert mock_project_repo.create.await_count == 2
 
     @pytest.mark.asyncio
     async def test_sync_handles_empty_tasklists(
@@ -152,7 +154,7 @@ class TestSyncFromGoogle:
 
         result = await service.sync_from_google(mock_session, inbox_list_id="inbox-list")
 
-        assert result == {"created": [], "updated": [], "skipped": []}
+        assert result == {"created": [], "updated": [], "deactivated": [], "skipped": []}
         mock_project_repo.get_by_google_tasklist_id.assert_not_awaited()
         mock_project_repo.create.assert_not_awaited()
         mock_project_repo.save.assert_not_awaited()
@@ -187,11 +189,12 @@ class TestSyncFromGoogle:
         result = await service.sync_from_google(mock_session, inbox_list_id="inbox-list")
 
         assert result == {
-            "created": ["Brand New"],
+            "created": ["Brand New", "Inbox"],
             "updated": ["After"],
-            "skipped": ["Same Name", "Inbox"],
+            "deactivated": [],
+            "skipped": ["Same Name"],
         }
-        mock_project_repo.create.assert_awaited_once()
+        assert mock_project_repo.create.await_count == 2
         mock_project_repo.save.assert_awaited_once_with(needs_update)
 
     @pytest.mark.asyncio

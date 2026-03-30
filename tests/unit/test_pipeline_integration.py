@@ -68,7 +68,7 @@ class TestClassificationPipeline:
             }
         )
 
-        def mock_llm(prompt):
+        def mock_llm(prompt, *args, **kwargs):
             if "task interpreter" in prompt.lower():
                 return normalize_json
             return classify_json
@@ -106,8 +106,8 @@ class TestClassificationPipeline:
             }
         )
 
-        def mock_llm(prompt):
-            if "task interpreter" in prompt.lower():
+        def mock_llm(prompt, *args, **kwargs):
+            if "task processor" in prompt.lower():
                 return normalize_json
             return classify_json
 
@@ -154,8 +154,8 @@ class TestClassificationPipeline:
             }
         )
 
-        def mock_llm(prompt):
-            if "task interpreter" in prompt.lower():
+        def mock_llm(prompt, *args, **kwargs):
+            if "task processor" in prompt.lower():
                 return normalize_json
             return classify_json
 
@@ -194,8 +194,8 @@ class TestClassificationPipeline:
             }
         )
 
-        def mock_llm(prompt):
-            if "task interpreter" in prompt.lower():
+        def mock_llm(prompt, *args, **kwargs):
+            if "task processor" in prompt.lower():
                 return normalize_json
             return classify_json
 
@@ -234,10 +234,10 @@ class TestClassificationPipeline:
 
         # Route mock responses by prompt content since _call_and_parse retries
         # make counter-based approaches fragile.
-        def mock_llm(prompt):
+        def mock_llm(prompt, *args, **kwargs):
             if "breaking down" in prompt.lower():
                 return steps_json
-            if "task interpreter" in prompt.lower():
+            if "task processor" in prompt.lower():
                 return normalize_json
             return classify_json
 

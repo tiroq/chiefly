@@ -101,7 +101,7 @@ class TestGenerateProjectDescription:
         sample_tasks = [f"task {idx}" for idx in range(1, 26)]
         captured_prompts: list[str] = []
 
-        def capture_prompt(prompt: str) -> str:
+        def capture_prompt(prompt: str, *args, **kwargs) -> str:
             captured_prompts.append(prompt)
             return json.dumps(
                 {

@@ -401,6 +401,7 @@ def _setup_process_entry_mocks(
     mocks["review_queue_svc"] = review_queue_svc
 
     telegram_svc = MagicMock()
+    telegram_svc.aclose = AsyncMock()
     patches["TelegramService"] = telegram_svc
     mocks["telegram_svc"] = telegram_svc
 
