@@ -12,6 +12,16 @@ import pytest
 import pytest_asyncio
 
 
+@pytest.fixture(autouse=True)
+def _reset_pause_cache():
+    """Reset the review-pause in-memory cache before every test to prevent cross-test leaks."""
+    from apps.api.services.review_pause import _reset_cache
+
+    _reset_cache()
+    yield
+    _reset_cache()
+
+
 @pytest.fixture
 def sample_uuid() -> uuid.UUID:
     return uuid.UUID("12345678-1234-5678-1234-567812345678")

@@ -98,12 +98,14 @@ async def test_send_next_returns_false_when_queue_is_empty(
     session_repo = MagicMock()
     session_repo.has_active_review = AsyncMock(return_value=False)
     session_repo.get_next_queued_for_update = AsyncMock(return_value=None)
+    session_repo.get_next_send_failed_for_update = AsyncMock(return_value=None)
     mock_session_repo_cls.return_value = session_repo
 
     result = await service.send_next()
 
     assert result is False
     session_repo.get_next_queued_for_update.assert_awaited_once()
+    session_repo.get_next_send_failed_for_update.assert_awaited_once()
     mock_snapshot_repo_cls.assert_not_called()
     mock_telegram.send_proposal.assert_not_called()
 
