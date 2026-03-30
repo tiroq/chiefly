@@ -37,7 +37,7 @@ def _build_telegram_dispatcher():
     from apps.api.services.google_tasks_service import GoogleTasksService
     from apps.api.services.llm_service import LLMService
     from apps.api.services.project_routing_service import ProjectRoutingService
-    from apps.api.services.review_pause import toggle_review_pause
+    from apps.api.services.review_pause import load_pause_state, toggle_review_pause
     from apps.api.services.telegram_service import TelegramService
     from core.domain.enums import ReviewAction, TaskKind, WorkflowStatus
     from core.domain.exceptions import TaskNotFoundError
@@ -96,7 +96,9 @@ def _build_telegram_dispatcher():
 
     @dp.message(Command("pause"))
     async def cmd_pause(message: Message):
-        paused = toggle_review_pause()
+        factory = get_session_factory()
+        async with factory() as session:
+            paused = await toggle_review_pause(session)
         if paused:
             await message.answer("⏸ Review queue paused. Send /pause again to resume.")
             return
@@ -763,6 +765,16 @@ async def lifespan(app: FastAPI):
             logger.warning("project_sync_startup_failed", error=str(e))
 
     asyncio.create_task(_startup_project_sync())
+
+    try:
+        from apps.api.services.review_pause import load_pause_state
+
+        factory_for_pause = get_session_factory()
+        async with factory_for_pause() as pause_session:
+            await load_pause_state(pause_session)
+        logger.info("pause_state_loaded")
+    except Exception as e:
+        logger.warning("pause_state_load_failed", error=str(e))
 
     yield
 
