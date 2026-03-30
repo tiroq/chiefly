@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 FROM python:3.12-slim
 
 WORKDIR /app
@@ -10,21 +11,27 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 COPY pyproject.toml .
 ARG INSTALL_DEV=false
 # Install all third-party deps declared in pyproject.toml (no local package source needed).
-RUN python3 -c "
+RUN <<'DEPS_EOF'
+python3 -c "
 import tomllib, subprocess, sys
 with open('pyproject.toml', 'rb') as f:
     data = tomllib.load(f)
 deps = list(data['project']['dependencies'])
 subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir'] + deps, check=True)
-" && \
-    if [ "$INSTALL_DEV" = "true" ]; then \
-        python3 -c "
+"
+DEPS_EOF
+
+RUN <<'DEVDEPS_EOF'
+if [ "$INSTALL_DEV" = "true" ]; then
+    python3 -c "
 import tomllib, subprocess, sys
 with open('pyproject.toml', 'rb') as f:
     data = tomllib.load(f)
 dev_deps = data['project'].get('optional-dependencies', {}).get('dev', [])
 subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir'] + dev_deps, check=True)
-"; fi
+"
+fi
+DEVDEPS_EOF
 
 # --- Source layer ---
 # Invalidated on code changes, but no network I/O (deps already installed above).
