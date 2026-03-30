@@ -176,7 +176,7 @@ Monitoring operates automatically with no configuration needed. To customize:
 - Configure chat ID: `TELEGRAM_CHAT_ID`
 
 ### Polling Intervals
-- Inbox poll interval: `INBOX_POLL_INTERVAL_SECONDS` (default: 60 seconds)
+- Sync interval: `SYNC_INTERVAL_SECONDS` (default: 60 seconds; legacy `INBOX_POLL_INTERVAL_SECONDS` also accepted)
 - Project sync interval: `PROJECT_SYNC_CRON` (default: hourly)
 
 ## Monitoring Capabilities
