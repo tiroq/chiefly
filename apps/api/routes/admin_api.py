@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.admin.auth import require_admin
 from apps.api.config import get_settings
+from apps.api.services.admin_edit_service import AdminEditService
 from apps.api.dependencies import get_session
 from apps.api.services.admin_tasks_service import AdminTasksService, build_task_view
 from apps.api.services.classification_service import ClassificationService
@@ -45,7 +46,9 @@ from db.repositories.task_snapshot_repo import TaskSnapshotRepository
 logger = structlog.get_logger(__name__)
 
 templates = Jinja2Templates(directory="apps/api/templates")
-templates.env.filters["tojson"] = lambda v, indent=None: Markup(json.dumps(v, ensure_ascii=False, indent=indent))
+templates.env.filters["tojson"] = lambda v, indent=None: Markup(
+    json.dumps(v, ensure_ascii=False, indent=indent)
+)
 
 settings = get_settings()
 router = APIRouter(
@@ -275,16 +278,15 @@ async def rewrite_task_title(
         )
         rewritten = await llm_svc.rewrite_title(raw_text)
 
-        if record.current_tasklist_id and record.current_task_id:
-            try:
-                gtasks = GoogleTasksService(settings.google_credentials_file)
-                gtasks.patch_task(
-                    record.current_tasklist_id, record.current_task_id, title=rewritten
-                )
-            except Exception as exc:
-                logger.warning(
-                    "google_tasks_patch_failed", stable_id=str(stable_id), error=str(exc)
-                )
+        google_svc = GoogleTasksService(settings.google_credentials_file)
+        edit_svc = AdminEditService(session, google_svc, settings)
+        rewrite_result = await edit_svc.rewrite_title(stable_id, rewritten)
+        if not rewrite_result.success and rewrite_result.error:
+            logger.warning(
+                "google_tasks_patch_failed",
+                stable_id=str(stable_id),
+                error=rewrite_result.error,
+            )
 
         await session.commit()
 
@@ -477,43 +479,21 @@ async def edit_task(
             else ""
         )
 
-        if record.current_tasklist_id and record.current_task_id:
-            try:
-                gtasks = GoogleTasksService(settings.google_credentials_file)
-                patch_title = normalized_title.strip() if normalized_title.strip() else None
-                gtasks.patch_task(
-                    record.current_tasklist_id,
-                    record.current_task_id,
-                    title=patch_title,
-                    notes=updated_notes,
-                )
-
-                if new_project_id and str(new_project_id) != str(old_project_id_str or ""):
-                    project_repo = ProjectRepository(session)
-                    new_project = (
-                        await project_repo.get_by_id(new_project_id) if new_project_id else None
-                    )
-                    if (
-                        new_project
-                        and new_project.google_tasklist_id
-                        and new_project.google_tasklist_id != record.current_tasklist_id
-                    ):
-                        moved = gtasks.move_task(
-                            record.current_tasklist_id,
-                            record.current_task_id,
-                            new_project.google_tasklist_id,
-                        )
-                        await record_repo.update_pointer(
-                            stable_id,
-                            moved.tasklist_id,
-                            moved.id,
-                        )
-                        if patch_title:
-                            gtasks.patch_task(
-                                moved.tasklist_id, moved.id, title=patch_title, notes=updated_notes
-                            )
-            except Exception as exc:
-                logger.warning("google_tasks_edit_failed", stable_id=str(stable_id), error=str(exc))
+        google_svc = GoogleTasksService(settings.google_credentials_file)
+        edit_svc = AdminEditService(session, google_svc, settings)
+        edit_result = await edit_svc.edit_task(
+            stable_id,
+            normalized_title=normalized_title,
+            updated_notes=updated_notes,
+            new_project_id=new_project_id,
+            old_project_id=old_project_id_str,
+        )
+        if not edit_result.success and edit_result.error:
+            logger.warning(
+                "google_tasks_edit_failed",
+                stable_id=str(stable_id),
+                error=edit_result.error,
+            )
 
         await session.commit()
 

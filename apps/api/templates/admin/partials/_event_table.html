@@ -32,8 +32,8 @@
         <td>{{ item.subsystem }}</td>
         <td>{{ item.message }}</td>
         <td>
-          {% if item.task_item_id %}
-          <a href="/admin/tasks/{{ item.task_item_id }}" class="btn btn-secondary" style="padding: 0.125rem 0.5rem; font-size: 0.75rem;">View Task</a>
+          {% if item.stable_id %}
+          <a href="/admin/tasks/{{ item.stable_id }}" class="btn btn-secondary" style="padding: 0.125rem 0.5rem; font-size: 0.75rem;">View Task</a>
           {% else %}
           <span class="text-muted">-</span>
           {% endif %}
