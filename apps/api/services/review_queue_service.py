@@ -43,6 +43,8 @@ class ReviewQueueService:
 
         next_item = await session_repo.get_next_queued_for_update()
         if next_item is None:
+            next_item = await session_repo.get_next_send_failed_for_update()
+        if next_item is None:
             return False
 
         proposed = next_item.proposed_changes or {}
@@ -87,13 +89,24 @@ class ReviewQueueService:
             str(next_item.stable_id) if next_item.stable_id else str(next_item.id)
         )
 
-        msg_id = await self._telegram.send_proposal(
-            task_id=task_id_for_callback,
-            raw_text=raw_text,
-            classification=classification,
-            project_name=proposed.get("project_name"),
-            queue_position=1,
-        )
+        try:
+            msg_id = await self._telegram.send_proposal(
+                task_id=task_id_for_callback,
+                raw_text=raw_text,
+                classification=classification,
+                project_name=proposed.get("project_name"),
+                queue_position=1,
+            )
+        except Exception:
+            next_item.status = "send_failed"
+            await session_repo.save(next_item)
+            await self._session.commit()
+            logger.error(
+                "review_send_proposal_failed",
+                session_id=str(next_item.id),
+                stable_id=str(next_item.stable_id),
+            )
+            raise
 
         next_item.status = "pending"
         next_item.telegram_message_id = msg_id
