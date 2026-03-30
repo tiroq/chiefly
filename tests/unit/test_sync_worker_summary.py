@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from apps.api.services.sync_service import SyncCycleSummary, TaskListSyncResult
+from apps.api.services.sync_service import SyncCycleSummary
 
 
 def _make_summary(
@@ -29,6 +28,9 @@ def _make_summary(
 
 
 @patch("apps.api.workers.sync_worker.get_session_factory")
+@patch("apps.api.workers.sync_worker.SystemEventRepo")
+@patch("apps.api.workers.sync_worker.ProjectRepository")
+@patch("apps.api.workers.sync_worker.ProjectSyncService")
 @patch("apps.api.workers.sync_worker.AlertService")
 @patch("apps.api.workers.sync_worker.TaskChangeMonitor")
 @patch("apps.api.workers.sync_worker.SyncService")
@@ -43,6 +45,9 @@ async def test_run_sync_sends_summary_message_when_sync_has_updates(
     mock_sync_service_cls,
     mock_change_monitor_cls,
     mock_alert_service_cls,
+    mock_project_sync_cls,
+    mock_project_repo_cls,
+    mock_event_repo_cls,
     mock_get_session_factory,
 ):
     from apps.api.workers.sync_worker import run_sync
@@ -51,6 +56,7 @@ async def test_run_sync_sends_summary_message_when_sync_has_updates(
         google_credentials_file="credentials.json",
         telegram_bot_token="bot-token",
         telegram_chat_id="chat-id",
+        google_tasks_inbox_list_id="inbox-list",
     )
     mock_get_settings.return_value = settings
 
@@ -60,6 +66,12 @@ async def test_run_sync_sends_summary_message_when_sync_has_updates(
     mock_telegram_cls.return_value = telegram
 
     mock_google_tasks_cls.return_value = MagicMock()
+
+    project_sync = MagicMock()
+    project_sync.sync_from_google = AsyncMock(
+        return_value={"created": [], "updated": [], "deactivated": [], "skipped": []}
+    )
+    mock_project_sync_cls.return_value = project_sync
 
     summary = _make_summary(tasklists_scanned=3, tasks_scanned=10, new_count=2, updated_count=1)
     sync_service = MagicMock()
@@ -95,6 +107,9 @@ async def test_run_sync_sends_summary_message_when_sync_has_updates(
 
 
 @patch("apps.api.workers.sync_worker.get_session_factory")
+@patch("apps.api.workers.sync_worker.SystemEventRepo")
+@patch("apps.api.workers.sync_worker.ProjectRepository")
+@patch("apps.api.workers.sync_worker.ProjectSyncService")
 @patch("apps.api.workers.sync_worker.AlertService")
 @patch("apps.api.workers.sync_worker.TaskChangeMonitor")
 @patch("apps.api.workers.sync_worker.SyncService")
@@ -109,6 +124,9 @@ async def test_run_sync_no_message_when_nothing_changed(
     mock_sync_service_cls,
     mock_change_monitor_cls,
     mock_alert_service_cls,
+    mock_project_sync_cls,
+    mock_project_repo_cls,
+    mock_event_repo_cls,
     mock_get_session_factory,
 ):
     from apps.api.workers.sync_worker import run_sync
@@ -117,6 +135,7 @@ async def test_run_sync_no_message_when_nothing_changed(
         google_credentials_file="credentials.json",
         telegram_bot_token="bot-token",
         telegram_chat_id="chat-id",
+        google_tasks_inbox_list_id="inbox-list",
     )
     mock_get_settings.return_value = settings
 
@@ -126,6 +145,12 @@ async def test_run_sync_no_message_when_nothing_changed(
     mock_telegram_cls.return_value = telegram
 
     mock_google_tasks_cls.return_value = MagicMock()
+
+    project_sync = MagicMock()
+    project_sync.sync_from_google = AsyncMock(
+        return_value={"created": [], "updated": [], "deactivated": [], "skipped": []}
+    )
+    mock_project_sync_cls.return_value = project_sync
 
     summary = _make_summary(
         tasklists_scanned=5,

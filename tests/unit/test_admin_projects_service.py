@@ -14,6 +14,7 @@ from db.models.project_alias import ProjectAlias
 def mock_project_repo():
     repo = MagicMock()
     repo.list_active = AsyncMock(return_value=[])
+    repo.list_all_including_deleted = AsyncMock(return_value=[])
     repo.get_by_id = AsyncMock(return_value=None)
     return repo
 
@@ -56,7 +57,7 @@ class TestListProjects:
         project_b = MagicMock(spec=Project)
         project_b.id = uuid.uuid4()
 
-        mock_project_repo.list_active.return_value = [project_a, project_b]
+        mock_project_repo.list_all_including_deleted.return_value = [project_a, project_b]
         mock_session.execute = AsyncMock(
             side_effect=[
                 _mock_scalar_one(5),
@@ -77,7 +78,7 @@ class TestListProjects:
     async def test_list_projects_returns_empty_list_when_no_projects(
         self, service, mock_session, mock_project_repo
     ):
-        mock_project_repo.list_active.return_value = []
+        mock_project_repo.list_all_including_deleted.return_value = []
 
         result = await service.list_projects(mock_session)
 
