@@ -47,6 +47,10 @@ def configure_logging() -> None:
     logging.getLogger("sqlalchemy.engine").setLevel(engine_level)
     logging.getLogger("sqlalchemy.engine.Engine").setLevel(engine_level)
 
+    # Suppress APScheduler's per-tick "Running job / executed successfully" chatter.
+    logging.getLogger("apscheduler.executors.default").setLevel(logging.WARNING)
+    logging.getLogger("apscheduler.scheduler").setLevel(logging.WARNING)
+
     root_logger = logging.getLogger()
     for handler in root_logger.handlers:
         handler.addFilter(CompactSQLLogFilter())
