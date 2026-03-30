@@ -72,7 +72,7 @@ You dump anything into a Google Tasks list called **Inbox** — rough notes, voi
 | Enum | Values |
 |------|--------|
 | `TaskKind` | TASK, WAITING, COMMITMENT, IDEA, REFERENCE |
-| `TaskStatus` | NEW → PROPOSED → CONFIRMED → ROUTED → COMPLETED / DISCARDED / ERROR |
+| `LegacyTaskStatus` | NEW → PROPOSED → CONFIRMED → ROUTED → COMPLETED / DISCARDED / ERROR |
 | `ReviewAction` | CONFIRM, EDIT, CHANGE_PROJECT, CHANGE_TYPE, DISCARD, SHOW_STEPS |
 | `ProjectType` | CLIENT, PERSONAL, FAMILY, OPS, WRITING, INTERNAL |
 | `ConfidenceBand` | LOW, MEDIUM, HIGH |
@@ -251,4 +251,3 @@ make test-integration
 - [ ] LLM streaming response
 - [ ] Recurring task detection
 - [ ] Smart due date inference from context
-
