@@ -25,7 +25,6 @@ class TaskRevision(Base):
     __tablename__ = "task_revisions"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
-    task_item_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True, index=True)
     stable_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid,
         ForeignKey("task_records.stable_id", ondelete="SET NULL"),
