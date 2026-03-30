@@ -89,3 +89,4 @@ class ProjectDetailResult:
     project: Project | None = None
     task_count: int = 0
     aliases: list[ProjectAlias] = field(default_factory=list)
+    recent_events: list[SystemEvent] = field(default_factory=list)

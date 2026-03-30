@@ -19,6 +19,10 @@ class Project:
     is_active: bool
     created_at: datetime
     updated_at: datetime
+    first_seen_at: datetime | None = None
+    last_seen_at: datetime | None = None
+    deleted_at: datetime | None = None
+    last_synced_name: str | None = None
 
 
 @dataclass
