@@ -9,7 +9,7 @@ class TaskKind(StrEnum):
     REFERENCE = "reference"
 
 
-class TaskStatus(StrEnum):
+class LegacyTaskStatus(StrEnum):
     NEW = "new"
     PROPOSED = "proposed"
     CONFIRMED = "confirmed"
