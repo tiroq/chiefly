@@ -107,8 +107,8 @@ async def _rebuild_proposal_card(callback, review_session, db_session):
     if msg:
         try:
             await msg.edit_text(text, reply_markup=keyboard)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("proposal_card_rebuild_failed", error=str(exc))
 
 
 @callback_router.callback_query(F.data.startswith("confirm:"))
@@ -186,6 +186,7 @@ async def handle_confirm(callback: CallbackQuery):
             new_gtask_id = t_id
             new_tasklist_id = tl_id
             normalized_title = proposed.get("normalized_title")
+            google_update_failed = False
 
             if project and project.google_tasklist_id and project.google_tasklist_id != tl_id:
                 try:
@@ -196,11 +197,13 @@ async def handle_confirm(callback: CallbackQuery):
                         gtasks.patch_task(new_tasklist_id, new_gtask_id, title=normalized_title)
                 except Exception as e:
                     logger.warning("google_tasks_move_failed", error=str(e))
+                    google_update_failed = True
             elif normalized_title and normalized_title != current_google.title:
                 try:
                     gtasks.patch_task(tl_id, t_id, title=normalized_title)
                 except Exception as e:
                     logger.warning("google_tasks_patch_failed", error=str(e))
+                    google_update_failed = True
 
             after_google = gtasks.get_task(new_tasklist_id, new_gtask_id)
             after_state = {}
@@ -257,7 +260,13 @@ async def handle_confirm(callback: CallbackQuery):
 
             await session.commit()
 
-        await callback.answer("✅ Task confirmed and routed!")
+        if google_update_failed:
+            await callback.answer(
+                "⚠️ Task confirmed but Google Tasks update failed. The task may need manual attention.",
+                show_alert=True,
+            )
+        else:
+            await callback.answer("✅ Task confirmed and routed!")
         msg = callback.message
         if isinstance(msg, Message):
             msg_text = msg.text or ""
@@ -732,6 +741,7 @@ async def handle_draft_message(callback: CallbackQuery):
     from apps.api.telegram.keyboards import draft_keyboard
 
     settings = get_settings()
+    fallback_note = ""
     try:
         from apps.api.services.llm_service import LLMService
 
@@ -749,10 +759,11 @@ async def handle_draft_message(callback: CallbackQuery):
     except Exception as exc:
         logger.warning("draft_generation_failed", error=str(exc))
         draft_text = f"Follow up on: {task_title}"
+        fallback_note = "\n\n<i>(AI draft unavailable — showing original title)</i>"
 
     if callback.message:
         await callback.message.answer(
-            f"💬 <b>Draft message:</b>\n\n{draft_text}",
+            f"💬 <b>Draft message:</b>\n\n{draft_text}{fallback_note}",
             reply_markup=draft_keyboard(payload.task_id),
         )
     await callback.answer()
@@ -796,6 +807,7 @@ async def handle_draft_shorter(callback: CallbackQuery):
     from apps.api.telegram.keyboards import draft_keyboard
 
     settings = get_settings()
+    fallback_note = ""
     try:
         from apps.api.services.llm_service import LLMService
 
@@ -814,10 +826,11 @@ async def handle_draft_shorter(callback: CallbackQuery):
     except Exception as exc:
         logger.warning("draft_shorter_failed", error=str(exc))
         draft_text = proposed.get("normalized_title", "")
+        fallback_note = "\n\n<i>(AI draft unavailable — showing original title)</i>"
 
     if isinstance(callback.message, Message):
         await callback.message.edit_text(
-            f"💬 <b>Draft (shorter):</b>\n\n{draft_text}",
+            f"💬 <b>Draft (shorter):</b>\n\n{draft_text}{fallback_note}",
             reply_markup=draft_keyboard(payload.task_id),
         )
     await callback.answer()
@@ -843,6 +856,7 @@ async def handle_draft_formal(callback: CallbackQuery):
     from apps.api.telegram.keyboards import draft_keyboard
 
     settings = get_settings()
+    fallback_note = ""
     try:
         from apps.api.services.llm_service import LLMService
 
@@ -861,10 +875,11 @@ async def handle_draft_formal(callback: CallbackQuery):
     except Exception as exc:
         logger.warning("draft_formal_failed", error=str(exc))
         draft_text = proposed.get("normalized_title", "")
+        fallback_note = "\n\n<i>(AI draft unavailable — showing original title)</i>"
 
     if isinstance(callback.message, Message):
         await callback.message.edit_text(
-            f"💬 <b>Draft (formal):</b>\n\n{draft_text}",
+            f"💬 <b>Draft (formal):</b>\n\n{draft_text}{fallback_note}",
             reply_markup=draft_keyboard(payload.task_id),
         )
     await callback.answer()

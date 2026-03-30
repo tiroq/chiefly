@@ -115,6 +115,22 @@ class ClassificationService:
         include_description: bool = False,
         include_steps: bool = False,
     ) -> tuple[PipelineResult, Project | None]:
+        """Run the full classification pipeline for a task.
+
+        Uses LLM to classify the task, routes it to a project, and applies
+        custom instructions if a project is identified.
+
+        Args:
+            raw_text: The original task title or text.
+            available_projects: List of projects to consider for routing.
+            raw_description: Optional task notes or description.
+            task_id: Optional stable ID of the task.
+            include_description: Whether to generate a new description.
+            include_steps: Whether to generate sub-steps.
+
+        Returns:
+            tuple[PipelineResult, Project | None]: The classification result and the matched project.
+        """
         routing_aliases = await self._get_routing_aliases()
         project_context = await self._build_project_context(available_projects)
 
@@ -181,6 +197,19 @@ class ClassificationService:
         raw_description: str = "",
         task_id: str | None = None,
     ) -> tuple[TaskClassificationResult, Project | None]:
+        """Classify a task and return a legacy-compatible result.
+
+        Wraps classify_pipeline and converts the result to TaskClassificationResult.
+
+        Args:
+            raw_text: The original task title or text.
+            available_projects: List of projects to consider for routing.
+            raw_description: Optional task notes or description.
+            task_id: Optional stable ID of the task.
+
+        Returns:
+            tuple[TaskClassificationResult, Project | None]: The classification and matched project.
+        """
         pipeline_result, project = await self.classify_pipeline(
             raw_text=raw_text,
             available_projects=available_projects,

@@ -100,6 +100,15 @@ class AdminEditService:
         self._project_repo: ProjectRepository = ProjectRepository(session)
 
     async def rewrite_title(self, stable_id: uuid.UUID, rewritten_title: str) -> AdminEditResult:
+        """Update the title of a task in Google Tasks and record the change.
+
+        Args:
+            stable_id: The stable ID of the task to update.
+            rewritten_title: The new title for the task.
+
+        Returns:
+            AdminEditResult: The result of the rewrite operation, including the new revision.
+        """
         started_at = datetime.now(tz=timezone.utc)
 
         record = await self._record_repo.get_by_stable_id(stable_id)
@@ -171,6 +180,21 @@ class AdminEditService:
         new_project_id: uuid.UUID | None,
         old_project_id: str | None,
     ) -> AdminEditResult:
+        """Perform a comprehensive edit of a task, including title, notes, and project.
+
+        Handles moving the task between Google Tasks lists if the project changes.
+        Records the entire operation as a new task revision.
+
+        Args:
+            stable_id: The stable ID of the task to edit.
+            normalized_title: The new title (optional).
+            updated_notes: The new notes/description (optional).
+            new_project_id: The ID of the new project (optional).
+            old_project_id: The ID of the current project (optional).
+
+        Returns:
+            AdminEditResult: The result of the edit operation, including success status and revision.
+        """
         started_at = datetime.now(tz=timezone.utc)
 
         record = await self._record_repo.get_by_stable_id(stable_id)

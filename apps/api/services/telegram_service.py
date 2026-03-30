@@ -42,7 +42,7 @@ def _build_proposal_text(
     safe_due_hint = html.escape(classification.due_hint) if classification.due_hint else None
 
     lines = [
-        "🤖 <b>Chiefly detected a new inbox item</b>",
+        "🤖 <b>Chiefly detected a new task to review</b>",
         "",
         f"<b>Raw:</b> <i>{safe_raw}</i>",
         "",
@@ -107,6 +107,19 @@ class TelegramService:
         queue_position: int | None = None,
         has_disambiguation: bool = False,
     ) -> int:
+        """Send a task proposal card to Telegram with action buttons.
+
+        Args:
+            task_id: The stable ID of the task.
+            raw_text: The original task text.
+            classification: The LLM classification result.
+            project_name: The name of the matched project.
+            queue_position: Optional position in the review queue.
+            has_disambiguation: Whether to show disambiguation options.
+
+        Returns:
+            int: The ID of the sent Telegram message.
+        """
         from apps.api.telegram.keyboards import proposal_keyboard
 
         text = _build_proposal_text(
@@ -137,6 +150,18 @@ class TelegramService:
         current_project: str | None = None,
         suggested_project: str | None = None,
     ) -> int:
+        """Send a project selection menu to Telegram.
+
+        Args:
+            task_id: The stable ID of the task.
+            projects: List of (name, slug) tuples for available projects.
+            task_title: Optional title of the task for context.
+            current_project: The currently assigned project name.
+            suggested_project: The project name suggested by LLM.
+
+        Returns:
+            int: The ID of the sent Telegram message.
+        """
         from apps.api.telegram.keyboards import project_picker_keyboard
 
         short_id = task_id.replace("-", "")
@@ -167,6 +192,14 @@ class TelegramService:
             raise TelegramError(f"Failed to send project picker: {e}") from e
 
     async def send_kind_picker(self, task_id: str) -> int:
+        """Send a task type (kind) selection menu to Telegram.
+
+        Args:
+            task_id: The stable ID of the task.
+
+        Returns:
+            int: The ID of the sent Telegram message.
+        """
         from apps.api.telegram.keyboards import kind_picker_keyboard
 
         short_id = task_id.replace("-", "")
@@ -183,6 +216,14 @@ class TelegramService:
             raise TelegramError(f"Failed to send kind picker: {e}") from e
 
     async def send_text(self, text: str) -> int:
+        """Send a plain text message to the configured Telegram chat.
+
+        Args:
+            text: The message content (HTML supported).
+
+        Returns:
+            int: The ID of the sent Telegram message.
+        """
         try:
             bot = self._get_bot()
             msg = await bot.send_message(chat_id=self._chat_id, text=text)
@@ -191,6 +232,13 @@ class TelegramService:
             raise TelegramError(f"Failed to send text: {e}") from e
 
     async def edit_message_text(self, message_id: int, text: str, reply_markup=None) -> None:
+        """Edit the text and keyboard of an existing Telegram message.
+
+        Args:
+            message_id: The ID of the message to edit.
+            text: The new message content.
+            reply_markup: The new inline keyboard (optional).
+        """
         try:
             bot = self._get_bot()
             await bot.edit_message_text(
@@ -203,6 +251,11 @@ class TelegramService:
             logger.warning("edit_message_text failed", error=str(e))
 
     async def delete_message(self, message_id: int) -> None:
+        """Delete a specific message from the Telegram chat.
+
+        Args:
+            message_id: The ID of the message to delete.
+        """
         try:
             bot = self._get_bot()
             await bot.delete_message(chat_id=self._chat_id, message_id=message_id)

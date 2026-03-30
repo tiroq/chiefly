@@ -55,7 +55,7 @@ def _queue_service(session, tg):
 async def cmd_start(message: Message):
     await message.answer(
         "👋 Hi! I'm <b>Chiefly</b>, your AI Chief of Staff.\n\n"
-        "I process tasks from your Google Tasks inbox and help you review them here.\n\n"
+        "I process tasks from your Google Tasks default tasklist and help you review them here.\n\n"
         "Use the menu below or type /help for commands.",
         reply_markup=main_menu_keyboard(),
     )

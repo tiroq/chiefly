@@ -1,6 +1,6 @@
 """
 Task Change Monitor - detects and tracks all changes to tasks during pull operations.
-Monitors both inbox polling and project sync operations for comprehensive change awareness.
+Monitors both default tasklist sync and project sync operations for comprehensive change awareness.
 """
 
 from __future__ import annotations

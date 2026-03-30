@@ -39,6 +39,14 @@ class ReviewQueueService:
         self._telegram = telegram
 
     async def send_next(self) -> SendNextResult:
+        """Send the next queued proposal to Telegram.
+
+        Checks pause state and active reviews before sending.
+        Returns the outcome as a SendNextResult enum value.
+
+        Returns:
+            SendNextResult: The result of the send operation (SENT, PAUSED, etc.).
+        """
         if is_review_paused():
             logger.info("review_queue_paused_skip_send_next")
             return SendNextResult.PAUSED
@@ -136,6 +144,14 @@ class ReviewQueueService:
         return SendNextResult.SENT
 
     async def get_queue_status(self) -> QueueStatus:
+        """Retrieve the current status of the review queue.
+
+        Includes information about active reviews, total queued items,
+        and titles of the next few items in the queue.
+
+        Returns:
+            QueueStatus: A dictionary containing queue status details.
+        """
         session_repo = ReviewSessionRepository(self._session)
 
         queued_sessions = await session_repo.list_queued(limit=10)

@@ -29,7 +29,7 @@ Task description: {raw_description}"""
 CLASSIFY_ROUTE_TITLE = """\
 You are an AI Chief of Staff.
 
-Your job is to classify an inbox item, assign it to a project, generate a clean title, \
+Your job is to classify a task item, assign it to a project, generate a clean title, \
 and define the next action.
 
 Projects:

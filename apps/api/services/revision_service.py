@@ -29,6 +29,17 @@ class RevisionService:
         classification: TaskClassificationResult,
         project_id: uuid.UUID | None,
     ) -> TaskRevision:
+        """Create a new revision record for a task classification.
+
+        Args:
+            stable_id: The stable ID of the task.
+            raw_text: The original task text.
+            classification: The LLM classification result.
+            project_id: The ID of the matched project (optional).
+
+        Returns:
+            TaskRevision: The created revision record.
+        """
         revision_no = await self._repo.get_next_revision_no_by_stable_id(stable_id)
         revision = TaskRevision(
             id=uuid.uuid4(),
@@ -53,6 +64,20 @@ class RevisionService:
         user_notes: str | None = None,
         final_kind: TaskKind | None = None,
     ) -> TaskRevision:
+        """Create a new revision record for a user's review decision.
+
+        Args:
+            stable_id: The stable ID of the task.
+            raw_text: The original task text.
+            decision: The action taken by the user (e.g., CONFIRM, EDIT).
+            classification: The classification result at the time of decision.
+            project_id: The final project ID.
+            user_notes: Optional notes provided by the user.
+            final_kind: The final task kind (optional).
+
+        Returns:
+            TaskRevision: The created revision record.
+        """
         revision_no = await self._repo.get_next_revision_no_by_stable_id(stable_id)
         revision = TaskRevision(
             id=uuid.uuid4(),
@@ -70,4 +95,12 @@ class RevisionService:
         return await self._repo.create(revision)
 
     async def list_revisions(self, stable_id: uuid.UUID) -> list[TaskRevision]:
+        """Retrieve all revision records for a specific task.
+
+        Args:
+            stable_id: The stable ID of the task.
+
+        Returns:
+            list[TaskRevision]: A list of all revisions for the task.
+        """
         return await self._repo.list_by_stable_id(stable_id)

@@ -77,7 +77,15 @@ class SyncService:
         self._google_tasks = google_tasks
 
     async def sync_all(self) -> SyncCycleSummary:
-        """Sync all Google Tasks task lists and their tasks."""
+        """Sync all Google Tasks task lists and their tasks.
+
+        Iterates through all available task lists, syncs tasks for each,
+        and performs missing/deleted task detection across the entire account.
+
+        Returns:
+            SyncCycleSummary: A summary of the sync operation including counts of
+                new, updated, moved, and deleted tasks.
+        """
         tasklists = self._google_tasks.list_tasklists()
         logger.info("sync_cycle_start", tasklists=len(tasklists))
 
@@ -123,7 +131,14 @@ class SyncService:
         return summary
 
     async def sync_tasklist(self, tasklist_id: str) -> int:
-        """Sync a single tasklist and return the count of synced tasks."""
+        """Sync a single tasklist and return the count of synced tasks.
+
+        Args:
+            tasklist_id: The Google Tasks ID of the list to sync.
+
+        Returns:
+            int: Total number of new, updated, and moved tasks.
+        """
         source_repo = SourceTaskRepository(self._session)
         queue_repo = ProcessingQueueRepository(self._session)
         record_repo = TaskRecordRepository(self._session)
@@ -146,7 +161,14 @@ class SyncService:
         return result.new_count + result.updated_count + result.moved_count
 
     async def sync_inbox(self, inbox_list_id: str) -> int:
-        """Backward-compatible alias for sync_tasklist()."""
+        """Backward-compatible alias for sync_tasklist().
+
+        Args:
+            inbox_list_id: The Google Tasks ID of the default tasklist.
+
+        Returns:
+            int: Total number of synced tasks.
+        """
         return await self.sync_tasklist(inbox_list_id)
 
     async def _sync_tasklist(
@@ -159,7 +181,23 @@ class SyncService:
         snapshot_repo: TaskSnapshotRepository,
         all_seen_stable_ids: set[uuid.UUID],
     ) -> TaskListSyncResult:
-        """Sync a single tasklist. Shared logic for sync_all() and sync_tasklist()."""
+        """Sync a single tasklist. Shared logic for sync_all() and sync_tasklist().
+
+        Processes each task in the list, handles new tasks, updates, and moves
+        between lists. Updates both source_tasks and task_records/snapshots.
+
+        Args:
+            tasklist_id: Google Tasks ID of the list.
+            tasklist_title: Human-readable title of the list.
+            source_repo: Repository for source task data.
+            queue_repo: Repository for processing queue.
+            record_repo: Repository for task records.
+            snapshot_repo: Repository for task snapshots.
+            all_seen_stable_ids: Set to track stable IDs seen during the sync cycle.
+
+        Returns:
+            TaskListSyncResult: Detailed results for this specific task list.
+        """
         gtasks = self._google_tasks.list_tasks(tasklist_id)
         logger.info(
             "sync_tasklist_start",

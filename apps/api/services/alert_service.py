@@ -42,7 +42,7 @@ class AlertService:
 
         Args:
             changes: List of detected TaskChange objects
-            operation: Type of operation that triggered changes ("inbox_poll", "project_sync", etc.)
+            operation: Type of operation that triggered changes ("sync", "project_sync", etc.)
 
         Returns:
             Alert summary with counts and status
@@ -161,7 +161,11 @@ class AlertService:
             lines.append("<b>Recent items:</b>")
             for i, change in enumerate(changes[:3], 1):
                 emoji = emoji_map.get(change.change_type.value, "•")
-                title_preview = (change.task_title[:50] + "...") if len(change.task_title) > 50 else change.task_title
+                title_preview = (
+                    (change.task_title[:50] + "...")
+                    if len(change.task_title) > 50
+                    else change.task_title
+                )
                 lines.append(f"{emoji} {i}. {title_preview}")
 
             if len(changes) > 3:
@@ -184,9 +188,7 @@ class AlertService:
 
         if "status" in change.details:
             status_change = change.details["status"]
-            lines.append(
-                f"<b>Status:</b> {status_change['before']} → {status_change['after']}"
-            )
+            lines.append(f"<b>Status:</b> {status_change['before']} → {status_change['after']}")
 
         if "title" in change.details:
             title_change = change.details["title"]
