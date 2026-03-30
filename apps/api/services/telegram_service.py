@@ -4,18 +4,12 @@ Telegram service for sending messages and handling the bot.
 
 from __future__ import annotations
 
-import asyncio
 import html
 
 from apps.api.logging import get_logger
 from core.domain.exceptions import TelegramError
 from core.schemas.llm import TaskClassificationResult
-from core.schemas.telegram import (
-    CallbackPayload,
-    KindSelectPayload,
-    ProjectSelectPayload,
-)
-from core.domain.enums import ReviewAction, TaskKind
+from core.domain.enums import TaskKind
 
 logger = get_logger(__name__)
 
@@ -112,7 +106,7 @@ class TelegramService:
         project_name: str | None,
         queue_position: int | None = None,
     ) -> int:
-        from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+        from apps.api.telegram.keyboards import proposal_keyboard
 
         text = _build_proposal_text(
             raw_text,
@@ -121,52 +115,7 @@ class TelegramService:
             queue_position=queue_position,
         )
         short_id = task_id.replace("-", "")
-
-        buttons = [
-            [
-                InlineKeyboardButton(
-                    text="✅ Confirm",
-                    callback_data=CallbackPayload(
-                        action=ReviewAction.CONFIRM, task_id=short_id
-                    ).encode(),
-                ),
-                InlineKeyboardButton(
-                    text="✏️ Edit",
-                    callback_data=CallbackPayload(
-                        action=ReviewAction.EDIT, task_id=short_id
-                    ).encode(),
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="📁 Change Project",
-                    callback_data=CallbackPayload(
-                        action=ReviewAction.CHANGE_PROJECT, task_id=short_id
-                    ).encode(),
-                ),
-                InlineKeyboardButton(
-                    text="🔄 Change Type",
-                    callback_data=CallbackPayload(
-                        action=ReviewAction.CHANGE_TYPE, task_id=short_id
-                    ).encode(),
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="📋 Show Steps",
-                    callback_data=CallbackPayload(
-                        action=ReviewAction.SHOW_STEPS, task_id=short_id
-                    ).encode(),
-                ),
-                InlineKeyboardButton(
-                    text="🗑 Discard",
-                    callback_data=CallbackPayload(
-                        action=ReviewAction.DISCARD, task_id=short_id
-                    ).encode(),
-                ),
-            ],
-        ]
-        keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
+        keyboard = proposal_keyboard(short_id)
 
         try:
             bot = self._get_bot()
@@ -187,7 +136,7 @@ class TelegramService:
         current_project: str | None = None,
         suggested_project: str | None = None,
     ) -> int:
-        from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+        from apps.api.telegram.keyboards import project_picker_keyboard
 
         short_id = task_id.replace("-", "")
         lines = ["📁 <b>Select a project:</b>"]
@@ -199,24 +148,10 @@ class TelegramService:
             lines.append(f"Suggested: {html.escape(suggested_project)}")
         text = "\n".join(lines)
 
-        buttons = []
-        for name, slug in projects:
-            label = name
-            if name == current_project:
-                label = f"✓ {name} (current)"
-            elif name == suggested_project:
-                label = f"★ {name} (suggested)"
-            buttons.append(
-                [
-                    InlineKeyboardButton(
-                        text=label,
-                        callback_data=ProjectSelectPayload(
-                            task_id=short_id, project_slug=slug
-                        ).encode(),
-                    )
-                ]
-            )
-        keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
+        projects_with_desc = [(name, slug, None) for name, slug in projects]
+        keyboard = project_picker_keyboard(
+            short_id, projects_with_desc, current_project, suggested_project
+        )
         try:
             bot = self._get_bot()
             msg = await bot.send_message(
@@ -229,21 +164,10 @@ class TelegramService:
             raise TelegramError(f"Failed to send project picker: {e}") from e
 
     async def send_kind_picker(self, task_id: str) -> int:
-        """Send a task kind selection keyboard."""
-        from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+        from apps.api.telegram.keyboards import kind_picker_keyboard
 
         short_id = task_id.replace("-", "")
-        buttons = []
-        for kind in TaskKind:
-            buttons.append(
-                [
-                    InlineKeyboardButton(
-                        text=KIND_LABELS.get(kind, kind.value),
-                        callback_data=KindSelectPayload(task_id=short_id, kind=kind.value).encode(),
-                    )
-                ]
-            )
-        keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
+        keyboard = kind_picker_keyboard(short_id)
         try:
             bot = self._get_bot()
             msg = await bot.send_message(

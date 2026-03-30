@@ -516,6 +516,48 @@ Return ONLY valid JSON:
                 logger.warning("llm_rewrite_failed", attempt=attempt, error=str(exc))
         return raw_text
 
+    async def generate_draft_message(
+        self,
+        task_title: str,
+        task_kind: str,
+        next_action: str | None = None,
+        tone: str = "neutral",
+    ) -> str:
+        tone_instruction = {
+            "neutral": "Clear and professional",
+            "formal": "Formal and polished",
+            "shorter": "Very brief and concise",
+        }.get(tone, "Clear and professional")
+
+        context_parts = [f"Task: {task_title}", f"Type: {task_kind}"]
+        if next_action:
+            context_parts.append(f"Next action: {next_action}")
+
+        prompt = (
+            "You are a productivity assistant. Draft a short follow-up message or note "
+            "for a team member or yourself about the following task. "
+            f"Tone: {tone_instruction}. "
+            "Return ONLY the message — no JSON, no explanation, no quotes.\n\n"
+            + "\n".join(context_parts)
+        )
+
+        for attempt in range(2):
+            try:
+                reqid = uuid.uuid4().hex[:8]
+                result = await asyncio.to_thread(
+                    self._call_llm_sync,
+                    prompt,
+                    "generate_draft_message",
+                    reqid,
+                )
+                draft = result.strip().strip('"').strip("'")
+                if draft:
+                    logger.info("draft_message_generated", model=self._model, tone=tone)
+                    return draft
+            except Exception as exc:
+                logger.warning("draft_message_generation_failed", attempt=attempt, error=str(exc))
+        return f"Follow up on: {task_title}"
+
     def generate_daily_review(self, context_payload: dict[str, list[dict[str, str]]]) -> str:
         lines = ["Here is the daily task summary:"]
         if context_payload.get("active_tasks"):
