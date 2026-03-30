@@ -7,8 +7,12 @@ import pytest
 from core.domain.enums import ReviewAction
 from core.schemas.telegram import (
     CallbackPayload,
+    DisambiguationPayload,
+    DraftActionPayload,
     KindSelectPayload,
     ProjectSelectPayload,
+    QueueActionPayload,
+    SettingPayload,
 )
 
 
@@ -36,11 +40,11 @@ class TestCallbackPayload:
 
     def test_decode_invalid_format_no_colon(self):
         with pytest.raises(ValueError, match="Invalid callback data"):
-            CallbackPayload.decode("invaliddata")
+            _ = CallbackPayload.decode("invaliddata")
 
     def test_decode_invalid_action(self):
         with pytest.raises(ValueError):
-            CallbackPayload.decode("unknown_action:abc123")
+            _ = CallbackPayload.decode("unknown_action:abc123")
 
     def test_decode_with_colon_in_task_id(self):
         # task_id part contains a colon — split(":", 1) handles this
@@ -66,11 +70,11 @@ class TestProjectSelectPayload:
 
     def test_decode_invalid_format(self):
         with pytest.raises(ValueError, match="Invalid project callback data"):
-            ProjectSelectPayload.decode("proj:onlyonepart")
+            _ = ProjectSelectPayload.decode("proj:onlyonepart")
 
     def test_decode_missing_prefix(self):
         with pytest.raises(ValueError, match="Invalid project callback data"):
-            ProjectSelectPayload.decode("notproj")
+            _ = ProjectSelectPayload.decode("notproj")
 
 
 class TestKindSelectPayload:
@@ -91,4 +95,91 @@ class TestKindSelectPayload:
 
     def test_decode_invalid_format(self):
         with pytest.raises(ValueError, match="Invalid kind callback data"):
-            KindSelectPayload.decode("kind:onlyonepart")
+            _ = KindSelectPayload.decode("kind:onlyonepart")
+
+
+class TestDisambiguationPayload:
+    def test_encode(self):
+        p = DisambiguationPayload(task_id="abc123", option_index=2)
+        assert p.encode() == "disambig:abc123:2"
+
+    def test_decode(self):
+        p = DisambiguationPayload.decode("disambig:abc123:2")
+        assert p.task_id == "abc123"
+        assert p.option_index == 2
+
+    def test_roundtrip(self):
+        original = DisambiguationPayload(task_id="deadbeef", option_index=1)
+        decoded = DisambiguationPayload.decode(original.encode())
+        assert decoded.task_id == original.task_id
+        assert decoded.option_index == original.option_index
+
+    def test_decode_invalid_format(self):
+        with pytest.raises(ValueError, match="Invalid disambiguation callback data"):
+            _ = DisambiguationPayload.decode("disambig:onlyonepart")
+
+
+class TestDraftActionPayload:
+    def test_encode(self):
+        p = DraftActionPayload(action="draft_use", task_id="abc123")
+        assert p.encode() == "draft_use:abc123"
+
+    def test_decode(self):
+        p = DraftActionPayload.decode("draft_use:abc123")
+        assert p.action == "draft_use"
+        assert p.task_id == "abc123"
+
+    def test_roundtrip(self):
+        original = DraftActionPayload(action="draft_formal", task_id="deadbeef")
+        decoded = DraftActionPayload.decode(original.encode())
+        assert decoded.action == original.action
+        assert decoded.task_id == original.task_id
+
+    def test_decode_invalid_no_colon(self):
+        with pytest.raises(ValueError, match="Invalid draft callback data"):
+            _ = DraftActionPayload.decode("draft_use")
+
+
+class TestQueueActionPayload:
+    def test_encode(self):
+        p = QueueActionPayload(action="queue:start")
+        assert p.encode() == "queue:start"
+
+    def test_decode(self):
+        p = QueueActionPayload.decode("queue:start")
+        assert p.action == "queue:start"
+
+    def test_sub_action(self):
+        p = QueueActionPayload(action="queue:start")
+        assert p.sub_action == "start"
+
+    def test_batch_size(self):
+        p = QueueActionPayload(action="queue:batch:5")
+        assert p.batch_size == 5
+
+    def test_batch_size_none_for_non_batch(self):
+        p = QueueActionPayload(action="queue:start")
+        assert p.batch_size is None
+
+    def test_decode_invalid_prefix(self):
+        with pytest.raises(ValueError, match="Invalid queue callback data"):
+            _ = QueueActionPayload.decode("notqueue:start")
+
+
+class TestSettingPayload:
+    def test_encode(self):
+        p = SettingPayload(key="auto_next")
+        assert p.encode() == "setting:auto_next"
+
+    def test_decode(self):
+        p = SettingPayload.decode("setting:auto_next")
+        assert p.key == "auto_next"
+
+    def test_roundtrip(self):
+        original = SettingPayload(key="batch_size")
+        decoded = SettingPayload.decode(original.encode())
+        assert decoded.key == original.key
+
+    def test_decode_invalid(self):
+        with pytest.raises(ValueError, match="Invalid setting callback data"):
+            _ = SettingPayload.decode("settingonlyonepart")

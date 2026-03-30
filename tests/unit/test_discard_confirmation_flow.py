@@ -4,41 +4,19 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from aiogram.types import Message
 
-from apps.api.main import _build_telegram_dispatcher
-
-
-class _FakeMessage:
-    def __init__(self, text: str) -> None:
-        self.text = text
-        self.edit_text = AsyncMock()
-
-
-def _get_callback_handler(dp, name: str):
-    for handler in dp.callback_query.handlers:
-        if handler.callback.__name__ == name:
-            return handler.callback
-    raise AssertionError(f"Handler not found: {name}")
+from apps.api.telegram.callbacks import handle_discard, handle_discard_cancel
 
 
 @pytest.mark.asyncio
 async def test_discard_requires_confirmation_before_discarding():
-    settings = MagicMock(
-        telegram_bot_token="token",
-        telegram_chat_id="chat",
-        google_credentials_file="creds.json",
-    )
-    with (
-        patch("apps.api.main.get_settings", return_value=settings),
-        patch("aiogram.types.Message", _FakeMessage),
-    ):
-        dp = _build_telegram_dispatcher()
-
-    handle_discard = _get_callback_handler(dp, "handle_discard")
     task_id = "12345678123456781234567812345678"
-    message = _FakeMessage(
+    message = MagicMock(spec=Message)
+    message.text = (
         "🤖 <b>Chiefly detected a new inbox item</b>\n📌 <b>Proposed:</b>\n  Title: Buy milk"
     )
+    message.edit_text = AsyncMock()
     callback = SimpleNamespace(
         data=f"discard:{task_id}",
         message=message,
@@ -53,31 +31,38 @@ async def test_discard_requires_confirmation_before_discarding():
     assert await_args is not None
     args = await_args.args
     kwargs = await_args.kwargs
-    text = args[0] if args else kwargs["text"]
+    text = args[0] if args else kwargs.get("text", "")
     assert "⚠️ Discard this task?" in text
     assert "Buy milk" in text
 
-    markup = kwargs["reply_markup"]
-    assert markup.inline_keyboard[0][0].callback_data == f"discard_confirm:{task_id}"
-    assert markup.inline_keyboard[0][1].callback_data == f"discard_cancel:{task_id}"
+    reply_markup = kwargs.get("reply_markup")
+    assert reply_markup is not None
+    assert reply_markup.inline_keyboard[0][0].callback_data == f"discard_confirm:{task_id}"
+    assert reply_markup.inline_keyboard[0][1].callback_data == f"discard_cancel:{task_id}"
 
 
 @pytest.mark.asyncio
-async def test_discard_cancel_answers_cancelled():
-    settings = MagicMock(
-        telegram_bot_token="token",
-        telegram_chat_id="chat",
-        google_credentials_file="creds.json",
-    )
-    with patch("apps.api.main.get_settings", return_value=settings):
-        dp = _build_telegram_dispatcher()
+async def test_discard_cancel_shows_alert_when_session_not_found():
+    from core.domain.exceptions import TaskNotFoundError
 
-    handle_discard_cancel = _get_callback_handler(dp, "handle_discard_cancel")
     callback = SimpleNamespace(
         data="discard_cancel:123",
+        message=MagicMock(spec=Message),
         answer=AsyncMock(),
     )
 
-    await handle_discard_cancel(callback)
+    mock_session = AsyncMock()
+    mock_factory = MagicMock(return_value=mock_session)
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=False)
 
-    callback.answer.assert_awaited_once_with("Cancelled")
+    with (
+        patch("apps.api.telegram.callbacks.get_session_factory", return_value=mock_factory),
+        patch(
+            "apps.api.telegram.callbacks._get_review_session",
+            side_effect=TaskNotFoundError("not found"),
+        ),
+    ):
+        await handle_discard_cancel(callback)
+
+    callback.answer.assert_awaited_once_with("Task not found!", show_alert=True)

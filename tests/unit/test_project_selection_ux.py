@@ -89,7 +89,7 @@ class TestProjectSelectionUX:
 
         labels = [row[0].text for row in keyboard.inline_keyboard]
         assert "✓ Ops (current)" in labels
-        assert "★ Finance (suggested)" in labels
+        assert "★ Finance" in labels
         assert "Inbox" in labels
 
     @pytest.mark.asyncio
@@ -125,8 +125,9 @@ class TestProjectSelectionUX:
         )
 
         assert message_id == 777
-        assert len(keyboard.inline_keyboard) == len(projects)
-        for row, (_, slug) in zip(keyboard.inline_keyboard, projects, strict=True):
+        project_rows = keyboard.inline_keyboard[:-1]
+        assert len(project_rows) == len(projects)
+        for row, (_, slug) in zip(project_rows, projects, strict=True):
             button = row[0]
             assert (
                 button.callback_data
