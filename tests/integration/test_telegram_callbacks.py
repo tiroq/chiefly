@@ -5,20 +5,33 @@ Integration tests for Telegram callback flows (confirm, discard).
 from __future__ import annotations
 
 import uuid
+from collections.abc import AsyncIterator
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import pytest_asyncio
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
-from core.domain.enums import ConfidenceBand, ProjectType, TaskKind, TaskStatus
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.ext.compiler import compiles
+
+from core.domain.enums import ConfidenceBand, ProjectType, TaskKind, WorkflowStatus
 from db.base import Base
-from db.models import Project, TaskItem, TelegramReviewSession
+from db.models import Project, TaskRecord, TelegramReviewSession
+
+
+@compiles(JSONB, "sqlite")
+def _compile_jsonb_for_sqlite(_type, _compiler, **_kwargs):
+    return "JSON"
 
 
 @pytest_asyncio.fixture
-async def db_engine():
+async def db_engine() -> AsyncIterator[AsyncEngine]:
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -27,15 +40,14 @@ async def db_engine():
 
 
 @pytest_asyncio.fixture
-async def db_session(db_engine):
+async def db_session(db_engine: AsyncEngine) -> AsyncIterator[AsyncSession]:
     factory = async_sessionmaker(bind=db_engine, expire_on_commit=False, class_=AsyncSession)
     async with factory() as session:
         yield session
 
 
 @pytest_asyncio.fixture
-async def proposed_task(db_session) -> TaskItem:
-    """A task in PROPOSED status ready for user decision."""
+async def proposed_task(db_session: AsyncSession) -> TaskRecord:
     project = Project(
         id=uuid.uuid4(),
         name="Personal",
@@ -48,24 +60,18 @@ async def proposed_task(db_session) -> TaskItem:
     )
     db_session.add(project)
 
-    task = TaskItem(
-        id=uuid.uuid4(),
-        source_google_task_id="gtask-confirm-001",
-        source_google_tasklist_id="inbox-list-id",
-        current_google_task_id="gtask-confirm-001",
-        current_google_tasklist_id="inbox-list-id",
-        raw_text="Buy birthday gift for mom",
-        normalized_title="Buy birthday gift for mom",
-        kind=TaskKind.TASK,
-        status=TaskStatus.PROPOSED,
-        project_id=project.id,
-        confidence_band=ConfidenceBand.HIGH,
+    task = TaskRecord(
+        stable_id=uuid.uuid4(),
+        state="active",
+        processing_status="awaiting_review",
+        current_tasklist_id="inbox-list-id",
+        current_task_id="gtask-confirm-001",
     )
     db_session.add(task)
 
     review_session = TelegramReviewSession(
         id=uuid.uuid4(),
-        task_item_id=task.id,
+        stable_id=task.stable_id,
         telegram_chat_id="123456",
         telegram_message_id=100,
         status="pending",
@@ -77,124 +83,119 @@ async def proposed_task(db_session) -> TaskItem:
 
 
 @pytest.mark.asyncio
-async def test_confirm_flow_updates_status(db_session, proposed_task):
-    """Confirm action transitions task to ROUTED."""
+async def test_confirm_flow_updates_status(
+    db_session: AsyncSession, proposed_task: TaskRecord
+) -> None:
     from apps.api.services.revision_service import RevisionService
     from core.domain.enums import ReviewAction
-    from core.domain.state_machine import transition
     from core.schemas.llm import TaskClassificationResult
     from core.utils.datetime import utcnow
     from db.repositories.review_session_repo import ReviewSessionRepository
-    from db.repositories.task_item_repo import TaskItemRepository
+    from db.repositories.task_record_repo import TaskRecordRepository
 
-    task_repo = TaskItemRepository(db_session)
+    task_repo = TaskRecordRepository(db_session)
     session_repo = ReviewSessionRepository(db_session)
     revision_svc = RevisionService(db_session)
 
-    task = proposed_task
-    review_session = await session_repo.get_active_by_task(task.id)
+    task: TaskRecord = proposed_task
+    review_session = await session_repo.get_active_by_stable_id(task.stable_id)
 
     # Simulate confirm flow
-    task.status = transition(task.status, TaskStatus.CONFIRMED)
-    task.confirmed_at = utcnow()
-    task.is_processed = True
-    task.status = transition(TaskStatus.CONFIRMED, TaskStatus.ROUTED)
-    await task_repo.save(task)
+    await task_repo.update_processing_status(task.stable_id, WorkflowStatus.APPLIED)
 
     if review_session:
         review_session.status = "resolved"
         review_session.resolved_at = utcnow()
-        await session_repo.save(review_session)
+        _ = await session_repo.save(review_session)
 
     cls_result = TaskClassificationResult(
-        kind=task.kind or "task",
-        normalized_title=task.normalized_title or task.raw_text,
-        confidence=task.confidence_band or "medium",
+        kind=TaskKind.TASK,
+        normalized_title="Buy birthday gift for mom",
+        confidence=ConfidenceBand.HIGH,
     )
-    await revision_svc.create_decision_revision(
-        task_item_id=task.id,
-        raw_text=task.raw_text,
+    _ = await revision_svc.create_decision_revision(
+        stable_id=task.stable_id,
+        raw_text="Buy birthday gift for mom",
         decision=ReviewAction.CONFIRM,
         classification=cls_result,
-        project_id=task.project_id,
+        project_id=None,
     )
     await db_session.commit()
 
     # Verify
-    updated_task = await task_repo.get_by_id(task.id)
-    assert updated_task.status == TaskStatus.ROUTED
-    assert updated_task.confirmed_at is not None
-    assert updated_task.is_processed is True
+    updated_task = await task_repo.get_by_stable_id(task.stable_id)
+    assert updated_task is not None
+    assert updated_task.processing_status == WorkflowStatus.APPLIED.value
 
-    updated_session = await session_repo.get_active_by_task(task.id)
+    updated_session = await session_repo.get_active_by_stable_id(task.stable_id)
     assert updated_session is None  # No longer pending
 
-    revisions = await revision_svc.list_revisions(task.id)
+    revisions = await revision_svc.list_revisions(task.stable_id)
     assert len(revisions) == 1
     assert revisions[0].user_decision == ReviewAction.CONFIRM
 
 
 @pytest.mark.asyncio
-async def test_discard_flow_updates_status(db_session, proposed_task):
-    """Discard action transitions task to DISCARDED."""
+async def test_discard_flow_updates_status(
+    db_session: AsyncSession, proposed_task: TaskRecord
+) -> None:
     from apps.api.services.revision_service import RevisionService
     from core.domain.enums import ReviewAction
-    from core.domain.state_machine import transition
     from core.schemas.llm import TaskClassificationResult
     from core.utils.datetime import utcnow
     from db.repositories.review_session_repo import ReviewSessionRepository
-    from db.repositories.task_item_repo import TaskItemRepository
+    from db.repositories.task_record_repo import TaskRecordRepository
 
-    task_repo = TaskItemRepository(db_session)
+    task_repo = TaskRecordRepository(db_session)
     session_repo = ReviewSessionRepository(db_session)
     revision_svc = RevisionService(db_session)
 
-    task = proposed_task
-    review_session = await session_repo.get_active_by_task(task.id)
+    task: TaskRecord = proposed_task
+    review_session = await session_repo.get_active_by_stable_id(task.stable_id)
 
     # Simulate discard flow
-    task.status = transition(task.status, TaskStatus.DISCARDED)
-    task.is_processed = True
-    await task_repo.save(task)
+    await task_repo.update_processing_status(task.stable_id, WorkflowStatus.DISCARDED)
 
     if review_session:
         review_session.status = "resolved"
         review_session.resolved_at = utcnow()
-        await session_repo.save(review_session)
+        _ = await session_repo.save(review_session)
 
     cls_result = TaskClassificationResult(
-        kind=task.kind or "task",
-        normalized_title=task.normalized_title or task.raw_text,
-        confidence=task.confidence_band or "medium",
+        kind=TaskKind.TASK,
+        normalized_title="Buy birthday gift for mom",
+        confidence=ConfidenceBand.HIGH,
     )
-    await revision_svc.create_decision_revision(
-        task_item_id=task.id,
-        raw_text=task.raw_text,
+    _ = await revision_svc.create_decision_revision(
+        stable_id=task.stable_id,
+        raw_text="Buy birthday gift for mom",
         decision=ReviewAction.DISCARD,
         classification=cls_result,
-        project_id=task.project_id,
+        project_id=None,
     )
     await db_session.commit()
 
     # Verify
-    updated_task = await task_repo.get_by_id(task.id)
-    assert updated_task.status == TaskStatus.DISCARDED
-    assert updated_task.is_processed is True
+    updated_task = await task_repo.get_by_stable_id(task.stable_id)
+    assert updated_task is not None
+    assert updated_task.processing_status == WorkflowStatus.DISCARDED.value
 
-    revisions = await revision_svc.list_revisions(task.id)
+    revisions = await revision_svc.list_revisions(task.stable_id)
     assert len(revisions) == 1
     assert revisions[0].user_decision == ReviewAction.DISCARD
 
 
 @pytest.mark.asyncio
-async def test_revision_number_increments(db_session, proposed_task):
+async def test_revision_number_increments(
+    db_session: AsyncSession, proposed_task: TaskRecord
+) -> None:
     """Each revision for a task increments revision_no."""
     from apps.api.services.revision_service import RevisionService
     from core.domain.enums import ReviewAction
     from core.schemas.llm import TaskClassificationResult
 
     revision_svc = RevisionService(db_session)
-    task = proposed_task
+    task: TaskRecord = proposed_task
 
     cls_result = TaskClassificationResult(
         kind=TaskKind.TASK,
@@ -203,18 +204,18 @@ async def test_revision_number_increments(db_session, proposed_task):
     )
 
     rev1 = await revision_svc.create_decision_revision(
-        task_item_id=task.id,
-        raw_text=task.raw_text,
+        stable_id=task.stable_id,
+        raw_text="Buy birthday gift for mom",
         decision=ReviewAction.EDIT,
         classification=cls_result,
-        project_id=task.project_id,
+        project_id=None,
     )
     rev2 = await revision_svc.create_decision_revision(
-        task_item_id=task.id,
-        raw_text=task.raw_text,
+        stable_id=task.stable_id,
+        raw_text="Buy birthday gift for mom",
         decision=ReviewAction.CONFIRM,
         classification=cls_result,
-        project_id=task.project_id,
+        project_id=None,
     )
     await db_session.commit()
 

@@ -13,14 +13,25 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from core.domain.enums import ProjectType
 from db.base import Base
-from db.models import Project, ProjectPromptVersion, SystemEvent, ProjectAlias, TaskItem
+from db.models import Project, ProjectPromptVersion, SystemEvent, ProjectAlias, TaskRecord
 
 
 @pytest_asyncio.fixture
 async def db_engine():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(
+            lambda sync_conn: Base.metadata.create_all(
+                bind=sync_conn,
+                tables=[
+                    Base.metadata.tables["projects"],
+                    Base.metadata.tables["task_records"],
+                    Base.metadata.tables["project_prompt_versions"],
+                    Base.metadata.tables["system_events"],
+                    Base.metadata.tables["project_aliases"],
+                ],
+            )
+        )
     yield engine
     await engine.dispose()
 
@@ -51,16 +62,13 @@ async def sample_project(db_session):
 
 @pytest_asyncio.fixture
 async def sample_task(db_session, sample_project):
-    """Create a sample task for testing."""
-    from core.domain.enums import TaskStatus
-
-    task = TaskItem(
-        id=uuid.uuid4(),
-        source_google_task_id="test-gtask-001",
-        source_google_tasklist_id="test-list-id",
-        raw_text="Test task",
-        status=TaskStatus.NEW,
-        project_id=sample_project.id,
+    """Create a sample task record for testing."""
+    task = TaskRecord(
+        stable_id=uuid.uuid4(),
+        state="active",
+        processing_status="pending",
+        current_tasklist_id="test-list-id",
+        current_task_id="test-gtask-001",
     )
     db_session.add(task)
     await db_session.commit()
@@ -196,7 +204,7 @@ class TestSystemEventModel:
             event_type="classification_error",
             severity="error",
             subsystem="classification",
-            task_item_id=sample_task.id,
+            stable_id=sample_task.stable_id,
             project_id=sample_project.id,
             payload_json={"error": "Invalid input", "retries": 3},
             message="Classification failed for task, retried 3 times",
@@ -208,7 +216,7 @@ class TestSystemEventModel:
         assert event.event_type == "classification_error"
         assert event.severity == "error"
         assert event.subsystem == "classification"
-        assert event.task_item_id == sample_task.id
+        assert event.stable_id == sample_task.stable_id
         assert event.project_id == sample_project.id
         assert event.payload_json == {"error": "Invalid input", "retries": 3}
         assert event.message == "Classification failed for task, retried 3 times"

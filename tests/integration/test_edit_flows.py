@@ -7,15 +7,22 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from core.domain.enums import ConfidenceBand, ProjectType, ReviewAction, TaskKind, TaskStatus
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.ext.compiler import compiles
+
+from core.domain.enums import ConfidenceBand, ProjectType, ReviewAction, TaskKind
 from db.base import Base
-from db.models import Project, TaskItem, TaskRevision, TelegramReviewSession
+from db.models import Project, TaskRecord, TaskRevision, TelegramReviewSession
+
+
+@compiles(JSONB, "sqlite")
+def _compile_jsonb_for_sqlite(_type, _compiler, **_kwargs):
+    return "JSON"
 
 
 @pytest_asyncio.fixture
@@ -35,8 +42,9 @@ async def db_session(db_engine):
 
 
 @pytest_asyncio.fixture
-async def task_with_session(db_session) -> tuple[TaskItem, TelegramReviewSession, Project, Project]:
-    """A proposed task with review session and two projects."""
+async def task_with_session(
+    db_session,
+) -> tuple[TaskRecord, TelegramReviewSession, Project, Project]:
     project_personal = Project(
         id=uuid.uuid4(),
         name="Personal",
@@ -60,24 +68,18 @@ async def task_with_session(db_session) -> tuple[TaskItem, TelegramReviewSession
     db_session.add(project_personal)
     db_session.add(project_nft)
 
-    task = TaskItem(
-        id=uuid.uuid4(),
-        source_google_task_id="gtask-edit-001",
-        source_google_tasklist_id="inbox-list-id",
-        current_google_task_id="gtask-edit-001",
-        current_google_tasklist_id="inbox-list-id",
-        raw_text="test raw text for editing",
-        normalized_title="Original Title",
-        kind=TaskKind.TASK,
-        status=TaskStatus.PROPOSED,
-        project_id=project_personal.id,
-        confidence_band=ConfidenceBand.HIGH,
+    task = TaskRecord(
+        stable_id=uuid.uuid4(),
+        state="active",
+        processing_status="awaiting_review",
+        current_tasklist_id="inbox-list-id",
+        current_task_id="gtask-edit-001",
     )
     db_session.add(task)
 
     review_session = TelegramReviewSession(
         id=uuid.uuid4(),
-        task_item_id=task.id,
+        stable_id=task.stable_id,
         telegram_chat_id="123456",
         telegram_message_id=100,
         status="pending",
@@ -94,35 +96,33 @@ async def test_edit_title_creates_revision(db_session, task_with_session):
     from apps.api.services.revision_service import RevisionService
     from core.schemas.llm import TaskClassificationResult
     from db.repositories.review_session_repo import ReviewSessionRepository
-    from db.repositories.task_item_repo import TaskItemRepository
     from db.repositories.task_revision_repo import TaskRevisionRepository
 
     task, review_session, project_personal, _ = task_with_session
-    task_repo = TaskItemRepository(db_session)
     session_repo = ReviewSessionRepository(db_session)
     revision_svc = RevisionService(db_session)
 
     # Simulate the edit flow: mark session as awaiting_edit, then apply title
     review_session.status = "awaiting_edit"
     await session_repo.save(review_session)
+    active_session = await session_repo.get_active_by_stable_id(task.stable_id)
+    assert active_session is not None
+    assert active_session.status == "awaiting_edit"
 
     new_title = "Updated Title After Edit"
-    task.normalized_title = new_title
-    await task_repo.save(task)
 
     # Create revision (this is what the bugfix adds)
     cls_result = TaskClassificationResult(
-        kind=task.kind or "task",
+        kind=TaskKind.TASK,
         normalized_title=new_title,
-        confidence=task.confidence_band or "medium",
-        next_action=task.next_action,
+        confidence=ConfidenceBand.HIGH,
     )
     await revision_svc.create_decision_revision(
-        task_item_id=task.id,
-        raw_text=task.raw_text,
+        stable_id=task.stable_id,
+        raw_text="test raw text for editing",
         decision=ReviewAction.EDIT,
         classification=cls_result,
-        project_id=task.project_id,
+        project_id=project_personal.id,
         user_notes=f"Title changed to: {new_title}",
     )
 
@@ -131,14 +131,16 @@ async def test_edit_title_creates_revision(db_session, task_with_session):
     await db_session.commit()
 
     # Verify
-    updated_task = await task_repo.get_by_id(task.id)
-    assert updated_task.normalized_title == "Updated Title After Edit"
+    active_session = await session_repo.get_active_by_stable_id(task.stable_id)
+    assert active_session is not None
+    assert active_session.status == "pending"
 
     rev_repo = TaskRevisionRepository(db_session)
-    revisions = await rev_repo.list_by_task(task.id)
+    revisions: list[TaskRevision] = await rev_repo.list_by_stable_id(task.stable_id)
     assert len(revisions) == 1
     assert revisions[0].user_decision == ReviewAction.EDIT
     assert revisions[0].final_title == new_title
+    assert revisions[0].user_notes is not None
     assert "Title changed to:" in revisions[0].user_notes
 
 
@@ -147,37 +149,27 @@ async def test_change_project_creates_revision(db_session, task_with_session):
     """Changing project should create a TaskRevision with CHANGE_PROJECT decision."""
     from apps.api.services.revision_service import RevisionService
     from core.schemas.llm import TaskClassificationResult
-    from db.repositories.task_item_repo import TaskItemRepository
     from db.repositories.task_revision_repo import TaskRevisionRepository
 
-    task, _, project_personal, project_nft = task_with_session
-    task_repo = TaskItemRepository(db_session)
+    task, _, _, project_nft = task_with_session
     revision_svc = RevisionService(db_session)
 
-    # Change project
-    task.project_id = project_nft.id
-    await task_repo.save(task)
-
     cls_result = TaskClassificationResult(
-        kind=task.kind or "task",
-        normalized_title=task.normalized_title or task.raw_text,
-        confidence=task.confidence_band or "medium",
+        kind=TaskKind.TASK,
+        normalized_title="Original Title",
+        confidence=ConfidenceBand.HIGH,
     )
     await revision_svc.create_decision_revision(
-        task_item_id=task.id,
-        raw_text=task.raw_text,
+        stable_id=task.stable_id,
+        raw_text="test raw text for editing",
         decision=ReviewAction.CHANGE_PROJECT,
         classification=cls_result,
         project_id=project_nft.id,
     )
     await db_session.commit()
 
-    # Verify
-    updated_task = await task_repo.get_by_id(task.id)
-    assert updated_task.project_id == project_nft.id
-
     rev_repo = TaskRevisionRepository(db_session)
-    revisions = await rev_repo.list_by_task(task.id)
+    revisions: list[TaskRevision] = await rev_repo.list_by_stable_id(task.stable_id)
     assert len(revisions) == 1
     assert revisions[0].user_decision == ReviewAction.CHANGE_PROJECT
     assert revisions[0].final_project_id == project_nft.id
@@ -188,39 +180,31 @@ async def test_change_type_creates_revision(db_session, task_with_session):
     """Changing kind should create a TaskRevision with CHANGE_TYPE decision."""
     from apps.api.services.revision_service import RevisionService
     from core.schemas.llm import TaskClassificationResult
-    from db.repositories.task_item_repo import TaskItemRepository
     from db.repositories.task_revision_repo import TaskRevisionRepository
 
-    task, _, _, _ = task_with_session
-    task_repo = TaskItemRepository(db_session)
+    task, _, project_personal, _ = task_with_session
     revision_svc = RevisionService(db_session)
 
     # Change type from TASK to WAITING
     new_kind = TaskKind.WAITING
-    task.kind = new_kind
-    await task_repo.save(task)
 
     cls_result = TaskClassificationResult(
         kind=new_kind,
-        normalized_title=task.normalized_title or task.raw_text,
-        confidence=task.confidence_band or "medium",
+        normalized_title="Original Title",
+        confidence=ConfidenceBand.HIGH,
     )
     await revision_svc.create_decision_revision(
-        task_item_id=task.id,
-        raw_text=task.raw_text,
+        stable_id=task.stable_id,
+        raw_text="test raw text for editing",
         decision=ReviewAction.CHANGE_TYPE,
         classification=cls_result,
-        project_id=task.project_id,
+        project_id=project_personal.id,
         final_kind=new_kind,
     )
     await db_session.commit()
 
-    # Verify
-    updated_task = await task_repo.get_by_id(task.id)
-    assert updated_task.kind == TaskKind.WAITING
-
     rev_repo = TaskRevisionRepository(db_session)
-    revisions = await rev_repo.list_by_task(task.id)
+    revisions: list[TaskRevision] = await rev_repo.list_by_stable_id(task.stable_id)
     assert len(revisions) == 1
     assert revisions[0].user_decision == ReviewAction.CHANGE_TYPE
     assert revisions[0].final_kind == TaskKind.WAITING
@@ -244,8 +228,8 @@ async def test_multiple_edits_increment_revisions(db_session, task_with_session)
 
     # Edit title
     await revision_svc.create_decision_revision(
-        task_item_id=task.id,
-        raw_text=task.raw_text,
+        stable_id=task.stable_id,
+        raw_text="test raw text for editing",
         decision=ReviewAction.EDIT,
         classification=cls_result,
         project_id=project_personal.id,
@@ -254,8 +238,8 @@ async def test_multiple_edits_increment_revisions(db_session, task_with_session)
 
     # Change project
     await revision_svc.create_decision_revision(
-        task_item_id=task.id,
-        raw_text=task.raw_text,
+        stable_id=task.stable_id,
+        raw_text="test raw text for editing",
         decision=ReviewAction.CHANGE_PROJECT,
         classification=cls_result,
         project_id=project_nft.id,
@@ -263,8 +247,8 @@ async def test_multiple_edits_increment_revisions(db_session, task_with_session)
 
     # Change type
     await revision_svc.create_decision_revision(
-        task_item_id=task.id,
-        raw_text=task.raw_text,
+        stable_id=task.stable_id,
+        raw_text="test raw text for editing",
         decision=ReviewAction.CHANGE_TYPE,
         classification=cls_result.model_copy(update={"kind": TaskKind.IDEA}),
         project_id=project_nft.id,
@@ -273,8 +257,8 @@ async def test_multiple_edits_increment_revisions(db_session, task_with_session)
 
     # Confirm
     await revision_svc.create_decision_revision(
-        task_item_id=task.id,
-        raw_text=task.raw_text,
+        stable_id=task.stable_id,
+        raw_text="test raw text for editing",
         decision=ReviewAction.CONFIRM,
         classification=cls_result,
         project_id=project_nft.id,
@@ -282,7 +266,7 @@ async def test_multiple_edits_increment_revisions(db_session, task_with_session)
     await db_session.commit()
 
     rev_repo = TaskRevisionRepository(db_session)
-    revisions = await rev_repo.list_by_task(task.id)
+    revisions: list[TaskRevision] = await rev_repo.list_by_stable_id(task.stable_id)
     assert len(revisions) == 4
     assert [r.revision_no for r in revisions] == [1, 2, 3, 4]
     assert [r.user_decision for r in revisions] == [

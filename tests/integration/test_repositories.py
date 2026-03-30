@@ -5,15 +5,21 @@ Integration tests for repository layer with in-memory SQLite.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta, timezone
 
 import pytest
 import pytest_asyncio
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from core.domain.enums import ConfidenceBand, ProjectType, ReviewAction, TaskKind, TaskStatus
+from core.domain.enums import ProjectType, TaskRecordState, WorkflowStatus
 from db.base import Base
-from db.models import Project, TaskItem, TaskRevision, TelegramReviewSession
+from db.models import Project, TaskRecord, TaskRevision, TelegramReviewSession
+
+
+@compiles(JSONB, "sqlite")
+def _compile_jsonb_for_sqlite(_type, _compiler, **_kwargs):
+    return "JSON"
 
 
 @pytest_asyncio.fixture
@@ -32,158 +38,146 @@ async def db_session(db_engine):
         yield session
 
 
-class TestTaskItemRepository:
+class TestTaskRecordRepository:
     @pytest.mark.asyncio
     async def test_create_and_get_by_id(self, db_session):
-        from db.repositories.task_item_repo import TaskItemRepository
+        from db.repositories.task_record_repo import TaskRecordRepository
 
-        repo = TaskItemRepository(db_session)
-        task_id = uuid.uuid4()
-        task = TaskItem(
-            id=task_id,
-            source_google_task_id="g-001",
-            source_google_tasklist_id="inbox",
-            raw_text="Test task",
-            status=TaskStatus.NEW,
+        repo = TaskRecordRepository(db_session)
+        stable_id = uuid.uuid4()
+        created = await repo.create(
+            stable_id=stable_id,
+            current_tasklist_id="inbox",
+            current_task_id="g-001",
         )
-        created = await repo.create(task)
         await db_session.commit()
 
-        fetched = await repo.get_by_id(task_id)
+        fetched = await repo.get_by_stable_id(stable_id)
         assert fetched is not None
-        assert fetched.raw_text == "Test task"
-        assert fetched.status == TaskStatus.NEW
+        assert created.stable_id == stable_id
+        assert fetched.stable_id == stable_id
+        assert fetched.current_tasklist_id == "inbox"
+        assert fetched.current_task_id == "g-001"
 
     @pytest.mark.asyncio
     async def test_get_by_source_google_task_id(self, db_session):
-        from db.repositories.task_item_repo import TaskItemRepository
+        from db.repositories.task_record_repo import TaskRecordRepository
 
-        repo = TaskItemRepository(db_session)
-        task = TaskItem(
-            id=uuid.uuid4(),
-            source_google_task_id="unique-g-id",
-            source_google_tasklist_id="inbox",
-            raw_text="Test",
-            status=TaskStatus.NEW,
+        repo = TaskRecordRepository(db_session)
+        stable_id = uuid.uuid4()
+        await repo.create(
+            stable_id=stable_id,
+            current_tasklist_id="inbox",
+            current_task_id="unique-g-id",
         )
-        await repo.create(task)
         await db_session.commit()
 
-        fetched = await repo.get_by_source_google_task_id("unique-g-id")
+        fetched = await repo.get_by_pointer("inbox", "unique-g-id")
         assert fetched is not None
-        assert fetched.source_google_task_id == "unique-g-id"
+        assert fetched.stable_id == stable_id
+        assert fetched.current_task_id == "unique-g-id"
 
     @pytest.mark.asyncio
     async def test_get_by_source_google_task_id_not_found(self, db_session):
-        from db.repositories.task_item_repo import TaskItemRepository
+        from db.repositories.task_record_repo import TaskRecordRepository
 
-        repo = TaskItemRepository(db_session)
-        fetched = await repo.get_by_source_google_task_id("nonexistent")
+        repo = TaskRecordRepository(db_session)
+        fetched = await repo.get_by_pointer("inbox", "nonexistent")
         assert fetched is None
 
     @pytest.mark.asyncio
     async def test_list_by_status(self, db_session):
-        from db.repositories.task_item_repo import TaskItemRepository
+        from db.repositories.task_record_repo import TaskRecordRepository
 
-        repo = TaskItemRepository(db_session)
+        repo = TaskRecordRepository(db_session)
         for i in range(3):
-            task = TaskItem(
-                id=uuid.uuid4(),
-                source_google_task_id=f"g-status-{i}",
-                source_google_tasklist_id="inbox",
-                raw_text=f"Task {i}",
-                status=TaskStatus.PROPOSED,
+            await repo.create(
+                stable_id=uuid.uuid4(),
+                state=TaskRecordState.ACTIVE,
+                current_tasklist_id="inbox",
+                current_task_id=f"g-state-{i}",
             )
-            await repo.create(task)
 
-        # Also create one with different status
-        other = TaskItem(
-            id=uuid.uuid4(),
-            source_google_task_id="g-other",
-            source_google_tasklist_id="inbox",
-            raw_text="Other",
-            status=TaskStatus.NEW,
+        await repo.create(
+            stable_id=uuid.uuid4(),
+            state=TaskRecordState.MISSING,
+            current_tasklist_id="inbox",
+            current_task_id="g-other",
         )
-        await repo.create(other)
         await db_session.commit()
 
-        proposed = await repo.list_by_status(TaskStatus.PROPOSED)
-        assert len(proposed) == 3
+        active = await repo.list_by_state(TaskRecordState.ACTIVE)
+        assert len(active) == 3
 
-        new_tasks = await repo.list_by_status(TaskStatus.NEW)
-        assert len(new_tasks) == 1
+        missing = await repo.list_by_state(TaskRecordState.MISSING)
+        assert len(missing) == 1
 
     @pytest.mark.asyncio
     async def test_list_active_routed(self, db_session):
-        from db.repositories.task_item_repo import TaskItemRepository
+        from db.repositories.task_record_repo import TaskRecordRepository
 
-        repo = TaskItemRepository(db_session)
-        now = datetime.now(tz=timezone.utc)
+        repo = TaskRecordRepository(db_session)
 
         for i in range(5):
-            task = TaskItem(
-                id=uuid.uuid4(),
-                source_google_task_id=f"g-routed-{i}",
-                source_google_tasklist_id="inbox",
-                raw_text=f"Routed {i}",
-                status=TaskStatus.ROUTED,
-                confirmed_at=now - timedelta(hours=i),
+            await repo.create(
+                stable_id=uuid.uuid4(),
+                state=TaskRecordState.ACTIVE,
+                current_tasklist_id="inbox",
+                current_task_id=f"g-active-{i}",
             )
-            await repo.create(task)
+        await repo.create(
+            stable_id=uuid.uuid4(),
+            state=TaskRecordState.UNADOPTED,
+            current_tasklist_id="inbox",
+            current_task_id="g-unadopted",
+        )
         await db_session.commit()
 
-        active = await repo.list_active_routed(limit=3)
-        assert len(active) == 3
+        active = await repo.list_active()
+        assert len(active) == 5
 
     @pytest.mark.asyncio
     async def test_save_updates_fields(self, db_session):
-        from db.repositories.task_item_repo import TaskItemRepository
+        from db.repositories.task_record_repo import TaskRecordRepository
 
-        repo = TaskItemRepository(db_session)
-        task = TaskItem(
-            id=uuid.uuid4(),
-            source_google_task_id="g-update",
-            source_google_tasklist_id="inbox",
-            raw_text="Original",
-            status=TaskStatus.NEW,
+        repo = TaskRecordRepository(db_session)
+        stable_id = uuid.uuid4()
+        await repo.create(
+            stable_id=stable_id,
+            current_tasklist_id="inbox",
+            current_task_id="g-update",
         )
-        await repo.create(task)
         await db_session.commit()
 
-        task.status = TaskStatus.PROPOSED
-        task.normalized_title = "Updated Title"
-        await repo.save(task)
+        await repo.update_processing_status(stable_id, WorkflowStatus.APPLIED)
         await db_session.commit()
 
-        fetched = await repo.get_by_id(task.id)
-        assert fetched.status == TaskStatus.PROPOSED
-        assert fetched.normalized_title == "Updated Title"
+        fetched = await repo.get_by_stable_id(stable_id)
+        assert fetched is not None
+        assert fetched.processing_status == WorkflowStatus.APPLIED.value
 
     @pytest.mark.asyncio
     async def test_unique_source_google_task_id(self, db_session):
-        from sqlalchemy.exc import IntegrityError
-        from db.repositories.task_item_repo import TaskItemRepository
+        if db_session.bind is not None and db_session.bind.dialect.name == "sqlite":
+            pytest.skip("Partial unique index on pointer is not enforced by SQLite")
 
-        repo = TaskItemRepository(db_session)
-        task1 = TaskItem(
-            id=uuid.uuid4(),
-            source_google_task_id="duplicate-id",
-            source_google_tasklist_id="inbox",
-            raw_text="Task 1",
-            status=TaskStatus.NEW,
+        from sqlalchemy.exc import IntegrityError
+        from db.repositories.task_record_repo import TaskRecordRepository
+
+        repo = TaskRecordRepository(db_session)
+        await repo.create(
+            stable_id=uuid.uuid4(),
+            current_tasklist_id="inbox",
+            current_task_id="duplicate-id",
         )
-        await repo.create(task1)
         await db_session.commit()
 
-        task2 = TaskItem(
-            id=uuid.uuid4(),
-            source_google_task_id="duplicate-id",
-            source_google_tasklist_id="inbox",
-            raw_text="Task 2",
-            status=TaskStatus.NEW,
-        )
         with pytest.raises(IntegrityError):
-            await repo.create(task2)
+            await repo.create(
+                stable_id=uuid.uuid4(),
+                current_tasklist_id="inbox",
+                current_task_id="duplicate-id",
+            )
             await db_session.commit()
 
 
@@ -192,21 +186,14 @@ class TestTaskRevisionRepository:
     async def test_create_and_list(self, db_session):
         from db.repositories.task_revision_repo import TaskRevisionRepository
 
-        # Need a task first
-        task = TaskItem(
-            id=uuid.uuid4(),
-            source_google_task_id="g-rev-001",
-            source_google_tasklist_id="inbox",
-            raw_text="Test",
-            status=TaskStatus.PROPOSED,
-        )
+        task = TaskRecord(stable_id=uuid.uuid4())
         db_session.add(task)
         await db_session.flush()
 
         repo = TaskRevisionRepository(db_session)
         rev = TaskRevision(
             id=uuid.uuid4(),
-            task_item_id=task.id,
+            stable_id=task.stable_id,
             revision_no=1,
             raw_text="Test",
             proposal_json={"kind": "task"},
@@ -214,7 +201,8 @@ class TestTaskRevisionRepository:
         created = await repo.create(rev)
         await db_session.commit()
 
-        revisions = await repo.list_by_task(task.id)
+        assert created.stable_id == task.stable_id
+        revisions = await repo.list_by_stable_id(task.stable_id)
         assert len(revisions) == 1
         assert revisions[0].revision_no == 1
 
@@ -222,25 +210,19 @@ class TestTaskRevisionRepository:
     async def test_get_next_revision_no(self, db_session):
         from db.repositories.task_revision_repo import TaskRevisionRepository
 
-        task = TaskItem(
-            id=uuid.uuid4(),
-            source_google_task_id="g-rev-002",
-            source_google_tasklist_id="inbox",
-            raw_text="Test",
-            status=TaskStatus.PROPOSED,
-        )
+        task = TaskRecord(stable_id=uuid.uuid4())
         db_session.add(task)
         await db_session.flush()
 
         repo = TaskRevisionRepository(db_session)
 
         # First revision number should be 1
-        next_no = await repo.get_next_revision_no(task.id)
+        next_no = await repo.get_next_revision_no_by_stable_id(task.stable_id)
         assert next_no == 1
 
         rev1 = TaskRevision(
             id=uuid.uuid4(),
-            task_item_id=task.id,
+            stable_id=task.stable_id,
             revision_no=1,
             raw_text="Test",
             proposal_json={},
@@ -248,20 +230,14 @@ class TestTaskRevisionRepository:
         await repo.create(rev1)
         await db_session.flush()
 
-        next_no = await repo.get_next_revision_no(task.id)
+        next_no = await repo.get_next_revision_no_by_stable_id(task.stable_id)
         assert next_no == 2
 
     @pytest.mark.asyncio
     async def test_revisions_ordered_by_revision_no(self, db_session):
         from db.repositories.task_revision_repo import TaskRevisionRepository
 
-        task = TaskItem(
-            id=uuid.uuid4(),
-            source_google_task_id="g-rev-003",
-            source_google_tasklist_id="inbox",
-            raw_text="Test",
-            status=TaskStatus.PROPOSED,
-        )
+        task = TaskRecord(stable_id=uuid.uuid4())
         db_session.add(task)
         await db_session.flush()
 
@@ -269,7 +245,7 @@ class TestTaskRevisionRepository:
         for i in [3, 1, 2]:  # Insert out of order
             rev = TaskRevision(
                 id=uuid.uuid4(),
-                task_item_id=task.id,
+                stable_id=task.stable_id,
                 revision_no=i,
                 raw_text=f"Rev {i}",
                 proposal_json={},
@@ -277,7 +253,7 @@ class TestTaskRevisionRepository:
             await repo.create(rev)
         await db_session.commit()
 
-        revisions = await repo.list_by_task(task.id)
+        revisions = await repo.list_by_stable_id(task.stable_id)
         assert [r.revision_no for r in revisions] == [1, 2, 3]
 
 
@@ -366,20 +342,14 @@ class TestReviewSessionRepository:
     async def test_get_active_by_task(self, db_session):
         from db.repositories.review_session_repo import ReviewSessionRepository
 
-        task = TaskItem(
-            id=uuid.uuid4(),
-            source_google_task_id="g-sess-001",
-            source_google_tasklist_id="inbox",
-            raw_text="Test",
-            status=TaskStatus.PROPOSED,
-        )
+        task = TaskRecord(stable_id=uuid.uuid4())
         db_session.add(task)
         await db_session.flush()
 
         repo = ReviewSessionRepository(db_session)
         session_obj = TelegramReviewSession(
             id=uuid.uuid4(),
-            task_item_id=task.id,
+            stable_id=task.stable_id,
             telegram_chat_id="123",
             telegram_message_id=1,
             status="pending",
@@ -387,7 +357,7 @@ class TestReviewSessionRepository:
         await repo.create(session_obj)
         await db_session.commit()
 
-        active = await repo.get_active_by_task(task.id)
+        active = await repo.get_active_by_stable_id(task.stable_id)
         assert active is not None
         assert active.status == "pending"
 
@@ -395,20 +365,14 @@ class TestReviewSessionRepository:
     async def test_resolved_session_not_returned_as_active(self, db_session):
         from db.repositories.review_session_repo import ReviewSessionRepository
 
-        task = TaskItem(
-            id=uuid.uuid4(),
-            source_google_task_id="g-sess-002",
-            source_google_tasklist_id="inbox",
-            raw_text="Test",
-            status=TaskStatus.PROPOSED,
-        )
+        task = TaskRecord(stable_id=uuid.uuid4())
         db_session.add(task)
         await db_session.flush()
 
         repo = ReviewSessionRepository(db_session)
         session_obj = TelegramReviewSession(
             id=uuid.uuid4(),
-            task_item_id=task.id,
+            stable_id=task.stable_id,
             telegram_chat_id="123",
             telegram_message_id=1,
             status="resolved",
@@ -416,27 +380,21 @@ class TestReviewSessionRepository:
         await repo.create(session_obj)
         await db_session.commit()
 
-        active = await repo.get_active_by_task(task.id)
+        active = await repo.get_active_by_stable_id(task.stable_id)
         assert active is None
 
     @pytest.mark.asyncio
     async def test_get_pending_edit_by_chat(self, db_session):
         from db.repositories.review_session_repo import ReviewSessionRepository
 
-        task = TaskItem(
-            id=uuid.uuid4(),
-            source_google_task_id="g-edit-001",
-            source_google_tasklist_id="inbox",
-            raw_text="Test",
-            status=TaskStatus.PROPOSED,
-        )
+        task = TaskRecord(stable_id=uuid.uuid4())
         db_session.add(task)
         await db_session.flush()
 
         repo = ReviewSessionRepository(db_session)
         session_obj = TelegramReviewSession(
             id=uuid.uuid4(),
-            task_item_id=task.id,
+            stable_id=task.stable_id,
             telegram_chat_id="chat-789",
             telegram_message_id=1,
             status="awaiting_edit",
@@ -446,7 +404,7 @@ class TestReviewSessionRepository:
 
         pending = await repo.get_pending_edit_by_chat("chat-789")
         assert pending is not None
-        assert pending.task_item_id == task.id
+        assert pending.stable_id == task.stable_id
 
         # Different chat should return None
         other = await repo.get_pending_edit_by_chat("chat-other")

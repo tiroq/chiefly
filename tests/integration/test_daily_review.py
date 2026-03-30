@@ -4,17 +4,25 @@ Integration tests for the daily review service.
 
 from __future__ import annotations
 
+import hashlib
 import uuid
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 import pytest_asyncio
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from core.domain.enums import ProjectType, TaskKind, TaskStatus
+from core.domain.enums import TaskRecordState, WorkflowStatus
 from db.base import Base
-from db.models import TaskItem
+from db.models import DailyReviewSnapshot, TaskRecord, TaskSnapshot
+
+
+@compiles(JSONB, "sqlite")
+def _compile_jsonb_sqlite(_type, _compiler, **_kw):
+    return "JSON"
 
 
 @pytest_asyncio.fixture
@@ -35,42 +43,68 @@ async def db_session(db_engine):
 
 @pytest_asyncio.fixture
 async def session_with_tasks(db_session):
-    """Session pre-seeded with various tasks."""
+    """Session pre-seeded with task records and latest snapshots."""
     now = datetime.now(tz=timezone.utc)
-    tasks = [
-        TaskItem(
-            id=uuid.uuid4(),
-            source_google_task_id="task-routed-1",
-            source_google_tasklist_id="inbox",
-            raw_text="Prepare Q2 report",
-            normalized_title="Prepare Q2 report",
-            kind=TaskKind.TASK,
-            status=TaskStatus.ROUTED,
+    records = [
+        TaskRecord(
+            stable_id=uuid.uuid4(),
+            state=TaskRecordState.ACTIVE.value,
+            processing_status=WorkflowStatus.APPLIED.value,
             created_at=now - timedelta(days=1),
         ),
-        TaskItem(
-            id=uuid.uuid4(),
-            source_google_task_id="task-routed-waiting",
-            source_google_tasklist_id="inbox",
-            raw_text="Wait for Alex certificates",
-            normalized_title="Wait for Alex certificates",
-            kind=TaskKind.WAITING,
-            status=TaskStatus.ROUTED,
+        TaskRecord(
+            stable_id=uuid.uuid4(),
+            state=TaskRecordState.ACTIVE.value,
+            processing_status=WorkflowStatus.APPLIED.value,
             created_at=now - timedelta(days=3),
         ),
-        TaskItem(
-            id=uuid.uuid4(),
-            source_google_task_id="task-proposed-1",
-            source_google_tasklist_id="inbox",
-            raw_text="Buy milk",
-            normalized_title="Buy milk",
-            kind=TaskKind.TASK,
-            status=TaskStatus.PROPOSED,
+        TaskRecord(
+            stable_id=uuid.uuid4(),
+            state=TaskRecordState.ACTIVE.value,
+            processing_status=WorkflowStatus.AWAITING_REVIEW.value,
             created_at=now - timedelta(hours=2),
         ),
     ]
-    for t in tasks:
-        db_session.add(t)
+
+    for record in records:
+        db_session.add(record)
+
+    snapshots = [
+        TaskSnapshot(
+            id=1,
+            stable_id=records[0].stable_id,
+            tasklist_id="inbox",
+            task_id="task-routed-1",
+            payload={"title": "Prepare Q2 report", "notes": "", "kind": "task"},
+            content_hash=hashlib.sha256("Prepare Q2 report|".encode()).hexdigest(),
+            is_latest=True,
+        ),
+        TaskSnapshot(
+            id=2,
+            stable_id=records[1].stable_id,
+            tasklist_id="inbox",
+            task_id="task-routed-waiting",
+            payload={
+                "title": "Wait for Alex certificates",
+                "notes": "",
+                "kind": "waiting",
+            },
+            content_hash=hashlib.sha256("Wait for Alex certificates|".encode()).hexdigest(),
+            is_latest=True,
+        ),
+        TaskSnapshot(
+            id=3,
+            stable_id=records[2].stable_id,
+            tasklist_id="inbox",
+            task_id="task-proposed-1",
+            payload={"title": "Buy milk", "notes": "", "kind": "task"},
+            content_hash=hashlib.sha256("Buy milk|".encode()).hexdigest(),
+            is_latest=True,
+        ),
+    ]
+    for snapshot in snapshots:
+        db_session.add(snapshot)
+
     await db_session.commit()
     return db_session
 
@@ -140,7 +174,7 @@ async def test_daily_review_payload_structure(session_with_tasks):
     assert "stale_tasks" in payload
     assert "pending_proposals" in payload
     assert isinstance(payload["pending_proposals"], int)
-    assert payload["pending_proposals"] == 1  # One task in PROPOSED status
+    assert payload["pending_proposals"] == 1
 
 
 @pytest.mark.asyncio
