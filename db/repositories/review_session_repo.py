@@ -85,6 +85,16 @@ class ReviewSessionRepository:
         )
         return result.scalar_one_or_none()
 
+    async def get_next_send_failed_for_update(self) -> TelegramReviewSession | None:
+        result = await self._session.execute(
+            select(TelegramReviewSession)
+            .where(TelegramReviewSession.status == "send_failed")
+            .order_by(TelegramReviewSession.created_at.asc())
+            .limit(1)
+            .with_for_update(skip_locked=True)
+        )
+        return result.scalar_one_or_none()
+
     async def has_active_review(self) -> bool:
         result = await self._session.execute(
             select(func.count(TelegramReviewSession.id)).where(
