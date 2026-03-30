@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import uuid
+from enum import StrEnum
 from typing import TypedDict
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,6 +14,13 @@ from db.repositories.review_session_repo import ReviewSessionRepository
 from db.repositories.task_snapshot_repo import TaskSnapshotRepository
 
 logger = get_logger(__name__)
+
+
+class SendNextResult(StrEnum):
+    SENT = "sent"
+    PAUSED = "paused"
+    ACTIVE_EXISTS = "active_exists"
+    QUEUE_EMPTY = "queue_empty"
 
 
 class QueueStatus(TypedDict):
@@ -31,21 +38,21 @@ class ReviewQueueService:
         self._session = session
         self._telegram = telegram
 
-    async def send_next(self) -> bool:
-        session_repo = ReviewSessionRepository(self._session)
-
+    async def send_next(self) -> SendNextResult:
         if is_review_paused():
             logger.info("review_queue_paused_skip_send_next")
-            return False
+            return SendNextResult.PAUSED
+
+        session_repo = ReviewSessionRepository(self._session)
 
         if await session_repo.has_active_review():
-            return False
+            return SendNextResult.ACTIVE_EXISTS
 
         next_item = await session_repo.get_next_queued_for_update()
         if next_item is None:
             next_item = await session_repo.get_next_send_failed_for_update()
         if next_item is None:
-            return False
+            return SendNextResult.QUEUE_EMPTY
 
         proposed = next_item.proposed_changes or {}
         if not proposed:
@@ -96,6 +103,7 @@ class ReviewQueueService:
                 classification=classification,
                 project_name=proposed.get("project_name"),
                 queue_position=1,
+                has_disambiguation=bool(proposed.get("disambiguation_options")),
             )
         except Exception:
             next_item.status = "send_failed"
@@ -125,7 +133,7 @@ class ReviewQueueService:
             session_id=str(next_item.id),
             queued_remaining=queued_count,
         )
-        return True
+        return SendNextResult.SENT
 
     async def get_queue_status(self) -> QueueStatus:
         session_repo = ReviewSessionRepository(self._session)

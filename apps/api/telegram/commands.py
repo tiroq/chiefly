@@ -9,6 +9,7 @@ from aiogram.types import BotCommand, Message
 
 from apps.api.config import get_settings
 from apps.api.logging import get_logger
+from apps.api.services.review_queue_service import SendNextResult
 from apps.api.services.review_pause import load_pause_state, toggle_review_pause
 from apps.api.services.telegram_service import TelegramService
 from apps.api.telegram.keyboards import (
@@ -233,9 +234,15 @@ async def cmd_next(message: Message):
     try:
         async with factory() as session:
             queue_svc = _queue_service(session, tg)
-            sent = await queue_svc.send_next()
+            result = await queue_svc.send_next()
 
-        if not sent:
+        if result == SendNextResult.SENT:
+            pass
+        elif result == SendNextResult.PAUSED:
+            await message.answer("⏸ Review queue is paused. Use /pause to resume.")
+        elif result == SendNextResult.ACTIVE_EXISTS:
+            await message.answer("📋 There's already an active review. Please finish it first.")
+        elif result == SendNextResult.QUEUE_EMPTY:
             await message.answer("✅ No more items in the review queue.")
     finally:
         await tg.aclose()

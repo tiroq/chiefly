@@ -33,7 +33,7 @@ async def run_sync() -> None:
             try:
                 project_result = await project_sync.sync_from_google(
                     session,
-                    inbox_list_id=settings.google_tasks_inbox_list_id,
+                    inbox_list_id=settings.default_tasklist_id,
                 )
                 project_changes = (
                     len(project_result["created"])

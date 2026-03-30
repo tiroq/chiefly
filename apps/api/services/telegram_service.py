@@ -105,6 +105,7 @@ class TelegramService:
         classification: TaskClassificationResult,
         project_name: str | None,
         queue_position: int | None = None,
+        has_disambiguation: bool = False,
     ) -> int:
         from apps.api.telegram.keyboards import proposal_keyboard
 
@@ -115,7 +116,7 @@ class TelegramService:
             queue_position=queue_position,
         )
         short_id = task_id.replace("-", "")
-        keyboard = proposal_keyboard(short_id)
+        keyboard = proposal_keyboard(short_id, has_disambiguation=has_disambiguation)
 
         try:
             bot = self._get_bot()
@@ -148,7 +149,9 @@ class TelegramService:
             lines.append(f"Suggested: {html.escape(suggested_project)}")
         text = "\n".join(lines)
 
-        projects_with_desc = [(name, slug, None) for name, slug in projects]
+        projects_with_desc: list[tuple[str, str, str | None]] = [
+            (name, slug, None) for name, slug in projects
+        ]
         keyboard = project_picker_keyboard(
             short_id, projects_with_desc, current_project, suggested_project
         )

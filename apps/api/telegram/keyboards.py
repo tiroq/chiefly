@@ -39,7 +39,7 @@ def queue_summary_keyboard() -> InlineKeyboardMarkup:
     )
 
 
-def proposal_keyboard(short_id: str) -> InlineKeyboardMarkup:
+def proposal_keyboard(short_id: str, has_disambiguation: bool = False) -> InlineKeyboardMarkup:
     def _btn(text: str, action: ReviewAction) -> InlineKeyboardButton:
         return InlineKeyboardButton(
             text=text,
@@ -56,10 +56,16 @@ def proposal_keyboard(short_id: str) -> InlineKeyboardMarkup:
                 _btn("📁 Change Project", ReviewAction.CHANGE_PROJECT),
                 _btn("🔄 Change Type", ReviewAction.CHANGE_TYPE),
             ],
-            [
-                _btn("❓ Clarify", ReviewAction.CLARIFY),
-                _btn("📋 Show Steps", ReviewAction.SHOW_STEPS),
-            ],
+            *(
+                [
+                    [
+                        _btn("❓ Clarify", ReviewAction.CLARIFY),
+                        _btn("📋 Show Steps", ReviewAction.SHOW_STEPS),
+                    ]
+                ]
+                if has_disambiguation
+                else []
+            ),
             [
                 _btn("💬 Draft Message", ReviewAction.DRAFT_MESSAGE),
                 _btn("⏭ Skip", ReviewAction.SKIP),
@@ -179,8 +185,8 @@ def draft_keyboard(short_id: str) -> InlineKeyboardMarkup:
 
 
 def settings_keyboard(settings: dict[str, bool | int]) -> InlineKeyboardMarkup:
-    def _toggle(key: str, label: str, current: bool) -> InlineKeyboardButton:
-        status = "ON" if current else "OFF"
+    def _toggle(key: str, label: str, current: bool | int) -> InlineKeyboardButton:
+        status = "ON" if bool(current) else "OFF"
         return InlineKeyboardButton(
             text=f"{label}: {status}",
             callback_data=f"setting:{key}",

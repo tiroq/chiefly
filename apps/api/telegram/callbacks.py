@@ -10,6 +10,7 @@ from aiogram.types import CallbackQuery, Message
 
 from apps.api.config import get_settings
 from apps.api.logging import get_logger
+from apps.api.services.review_queue_service import SendNextResult
 from apps.api.services.review_pause import toggle_review_pause
 from apps.api.services.telegram_service import TelegramService
 from apps.api.services.user_settings_service import (
@@ -98,7 +99,9 @@ async def _rebuild_proposal_card(callback, review_session, db_session):
         if review_session.stable_id
         else str(review_session.id).replace("-", "")
     )
-    keyboard = proposal_keyboard(short_id)
+    keyboard = proposal_keyboard(
+        short_id, has_disambiguation=bool(proposed.get("disambiguation_options"))
+    )
 
     msg = callback.message
     if msg:
@@ -812,7 +815,7 @@ async def handle_draft_shorter(callback: CallbackQuery):
         logger.warning("draft_shorter_failed", error=str(exc))
         draft_text = proposed.get("normalized_title", "")
 
-    if callback.message:
+    if isinstance(callback.message, Message):
         await callback.message.edit_text(
             f"💬 <b>Draft (shorter):</b>\n\n{draft_text}",
             reply_markup=draft_keyboard(payload.task_id),
@@ -859,7 +862,7 @@ async def handle_draft_formal(callback: CallbackQuery):
         logger.warning("draft_formal_failed", error=str(exc))
         draft_text = proposed.get("normalized_title", "")
 
-    if callback.message:
+    if isinstance(callback.message, Message):
         await callback.message.edit_text(
             f"💬 <b>Draft (formal):</b>\n\n{draft_text}",
             reply_markup=draft_keyboard(payload.task_id),
@@ -894,11 +897,15 @@ async def handle_queue_start(callback: CallbackQuery):
     try:
         async with factory() as session:
             queue_svc = _queue_service(session, tg)
-            sent = await queue_svc.send_next()
-        if sent:
-            await callback.answer("▶️ Sent next item.")
-        else:
-            await callback.answer("No items to send right now.")
+            result = await queue_svc.send_next()
+        if result == SendNextResult.SENT:
+            await callback.answer("Sending next item...")
+        elif result == SendNextResult.PAUSED:
+            await callback.answer("⏸ Review queue is paused.")
+        elif result == SendNextResult.ACTIVE_EXISTS:
+            await callback.answer("📋 Active review exists. Finish it first.")
+        elif result == SendNextResult.QUEUE_EMPTY:
+            await callback.answer("✅ No more items in queue.")
     finally:
         await tg.aclose()
 
@@ -921,8 +928,8 @@ async def handle_queue_batch(callback: CallbackQuery):
         for _ in range(batch_size):
             async with factory() as session:
                 queue_svc = _queue_service(session, tg)
-                sent = await queue_svc.send_next()
-            if not sent:
+                result = await queue_svc.send_next()
+            if result != SendNextResult.SENT:
                 break
             sent_count += 1
     finally:

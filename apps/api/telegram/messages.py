@@ -85,7 +85,9 @@ async def handle_title_edit(message: Message, state: FSMContext):
             if review_session.stable_id
             else str(review_session.id).replace("-", "")
         )
-        keyboard = proposal_keyboard(short_id)
+        keyboard = proposal_keyboard(
+            short_id, has_disambiguation=bool(proposed.get("disambiguation_options"))
+        )
 
         tg = TelegramService(settings.telegram_bot_token, settings.telegram_chat_id)
         try:

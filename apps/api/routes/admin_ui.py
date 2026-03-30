@@ -111,7 +111,7 @@ async def sync_projects(
 
     result = await sync_svc.sync_from_google(
         session,
-        inbox_list_id=settings_val.google_tasks_inbox_list_id,
+        inbox_list_id=settings_val.default_tasklist_id,
     )
 
     alias_repo = ProjectAliasRepo(session)
@@ -156,7 +156,7 @@ async def sync_projects(
 
     result = await sync_svc.sync_from_google(
         session,
-        inbox_list_id=settings_val.google_tasks_inbox_list_id,
+        inbox_list_id=settings_val.default_tasklist_id,
     )
 
     alias_repo = ProjectAliasRepo(session)

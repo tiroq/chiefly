@@ -41,9 +41,7 @@ async def run_project_sync() -> None:
                 logger.info("project_sync_baseline_captured")
 
                 # Sync projects and tasks
-                result = await sync_service.sync_from_google(
-                    session, settings.google_tasks_inbox_list_id
-                )
+                result = await sync_service.sync_from_google(session, settings.default_tasklist_id)
                 logger.info("project_sync_complete", **result)
 
                 # Detect changes after sync

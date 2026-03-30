@@ -225,6 +225,9 @@ async def resend_proposal(
                 raw_text=raw_text,
                 classification=classification,
                 project_name=project_name,
+                has_disambiguation=bool(
+                    latest_revision.proposal_json.get("disambiguation_options")
+                ),
             )
         finally:
             await telegram_svc.aclose()
@@ -329,7 +332,7 @@ async def import_tasks_from_google(
         for project in projects:
             if not project.google_tasklist_id:
                 continue
-            if project.google_tasklist_id == settings.google_tasks_inbox_list_id:
+            if project.google_tasklist_id == getattr(settings, "default_tasklist_id", None):
                 continue
 
             try:

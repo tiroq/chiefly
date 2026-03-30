@@ -122,8 +122,8 @@ class SyncService:
         )
         return summary
 
-    async def sync_inbox(self, inbox_list_id: str) -> int:
-        """Backward-compatible single-list sync. Syncs one tasklist and returns synced count."""
+    async def sync_tasklist(self, tasklist_id: str) -> int:
+        """Sync a single tasklist and return the count of synced tasks."""
         source_repo = SourceTaskRepository(self._session)
         queue_repo = ProcessingQueueRepository(self._session)
         record_repo = TaskRecordRepository(self._session)
@@ -132,8 +132,8 @@ class SyncService:
         all_seen_stable_ids: set[uuid.UUID] = set()
 
         result = await self._sync_tasklist(
-            tasklist_id=inbox_list_id,
-            tasklist_title="Inbox",
+            tasklist_id=tasklist_id,
+            tasklist_title="",
             source_repo=source_repo,
             queue_repo=queue_repo,
             record_repo=record_repo,
@@ -145,6 +145,10 @@ class SyncService:
         await self._session.commit()
         return result.new_count + result.updated_count + result.moved_count
 
+    async def sync_inbox(self, inbox_list_id: str) -> int:
+        """Backward-compatible alias for sync_tasklist()."""
+        return await self.sync_tasklist(inbox_list_id)
+
     async def _sync_tasklist(
         self,
         tasklist_id: str,
@@ -155,7 +159,7 @@ class SyncService:
         snapshot_repo: TaskSnapshotRepository,
         all_seen_stable_ids: set[uuid.UUID],
     ) -> TaskListSyncResult:
-        """Sync a single tasklist. Shared logic for sync_all() and sync_inbox()."""
+        """Sync a single tasklist. Shared logic for sync_all() and sync_tasklist()."""
         gtasks = self._google_tasks.list_tasks(tasklist_id)
         logger.info(
             "sync_tasklist_start",
