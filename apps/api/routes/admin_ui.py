@@ -31,7 +31,9 @@ from db.repositories.task_revision_repo import TaskRevisionRepository
 settings = get_settings()
 router = APIRouter(dependencies=[Depends(require_admin(settings.admin_token))])
 templates = Jinja2Templates(directory="apps/api/templates")
-templates.env.filters["tojson"] = lambda v, indent=None: Markup(json.dumps(v, ensure_ascii=False, indent=indent))
+templates.env.filters["tojson"] = lambda v, indent=None: Markup(
+    json.dumps(v, ensure_ascii=False, indent=indent)
+)
 
 
 @router.get("/")
@@ -52,8 +54,12 @@ async def admin_dashboard(
     }
 
     if is_htmx(request) and not is_htmx_boosted(request):
-        return templates.TemplateResponse(request=request, name="admin/partials/_dashboard.html", context=context)
-    return templates.TemplateResponse(request=request, name="admin/pages/dashboard.html", context=context)
+        return templates.TemplateResponse(
+            request=request, name="admin/partials/_dashboard.html", context=context
+        )
+    return templates.TemplateResponse(
+        request=request, name="admin/pages/dashboard.html", context=context
+    )
 
 
 @router.get("/projects")
@@ -84,8 +90,12 @@ async def admin_projects(
     }
 
     if is_htmx(request) and not is_htmx_boosted(request):
-        return templates.TemplateResponse(request=request, name="admin/partials/_project_table.html", context=context)
-    return templates.TemplateResponse(request=request, name="admin/pages/projects.html", context=context)
+        return templates.TemplateResponse(
+            request=request, name="admin/partials/_project_table.html", context=context
+        )
+    return templates.TemplateResponse(
+        request=request, name="admin/pages/projects.html", context=context
+    )
 
 
 @router.post("/projects/sync")
@@ -96,7 +106,53 @@ async def sync_projects(
     settings_val = get_settings()
     google_tasks = GoogleTasksService(settings_val.google_credentials_file)
     project_repo = ProjectRepository(session)
-    sync_svc = ProjectSyncService(google_tasks, project_repo)
+    event_repo = SystemEventRepo(session)
+    sync_svc = ProjectSyncService(google_tasks, project_repo, event_repo)
+
+    result = await sync_svc.sync_from_google(
+        session,
+        inbox_list_id=settings_val.google_tasks_inbox_list_id,
+    )
+
+    alias_repo = ProjectAliasRepo(session)
+    version_repo = ProjectPromptVersionRepo(session)
+
+    projects_svc = AdminProjectsService(project_repo, alias_repo)
+    prompt_svc = PromptVersioningService(version_repo, event_repo)
+
+    result = await svc.list_projects(session)
+
+    # Fetch active prompt versions for each project
+    for item in result.items:
+        if item.project:
+            active_version = await prompt_svc.get_active_for_project(session, item.project.id)
+            item.active_prompt_version = active_version
+
+    context = {
+        "request": request,
+        "result": result,
+        "title": "Projects",
+    }
+
+    if is_htmx(request) and not is_htmx_boosted(request):
+        return templates.TemplateResponse(
+            request=request, name="admin/partials/_project_table.html", context=context
+        )
+    return templates.TemplateResponse(
+        request=request, name="admin/pages/projects.html", context=context
+    )
+
+
+@router.post("/projects/sync")
+async def sync_projects(
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+):
+    settings_val = get_settings()
+    google_tasks = GoogleTasksService(settings_val.google_credentials_file)
+    project_repo = ProjectRepository(session)
+    event_repo = SystemEventRepo(session)
+    sync_svc = ProjectSyncService(google_tasks, project_repo, event_repo)
 
     result = await sync_svc.sync_from_google(
         session,
@@ -125,7 +181,9 @@ async def sync_projects(
     }
 
     if is_htmx(request) and not is_htmx_boosted(request):
-        return templates.TemplateResponse(request=request, name="admin/partials/_project_table.html", context=context)
+        return templates.TemplateResponse(
+            request=request, name="admin/partials/_project_table.html", context=context
+        )
     return RedirectResponse("/admin/projects?msg=Sync+complete", status_code=303)
 
 
@@ -154,8 +212,12 @@ async def admin_events(
     }
 
     if is_htmx(request) and not is_htmx_boosted(request):
-        return templates.TemplateResponse(request=request, name="admin/partials/_event_table.html", context=context)
-    return templates.TemplateResponse(request=request, name="admin/pages/events.html", context=context)
+        return templates.TemplateResponse(
+            request=request, name="admin/partials/_event_table.html", context=context
+        )
+    return templates.TemplateResponse(
+        request=request, name="admin/pages/events.html", context=context
+    )
 
 
 @router.get("/tasks")
@@ -214,8 +276,12 @@ async def admin_tasks_list(
     }
 
     if is_htmx(request) and not is_htmx_boosted(request):
-        return templates.TemplateResponse(request=request, name="admin/partials/_task_table.html", context=context)
-    return templates.TemplateResponse(request=request, name="admin/pages/tasks.html", context=context)
+        return templates.TemplateResponse(
+            request=request, name="admin/partials/_task_table.html", context=context
+        )
+    return templates.TemplateResponse(
+        request=request, name="admin/pages/tasks.html", context=context
+    )
 
 
 @router.get("/tasks/{task_id}")
@@ -250,8 +316,12 @@ async def admin_task_detail(
     }
 
     if is_htmx(request) and not is_htmx_boosted(request):
-        return templates.TemplateResponse(request=request, name="admin/partials/_task_detail.html", context=context)
-    return templates.TemplateResponse(request=request, name="admin/pages/task_detail.html", context=context)
+        return templates.TemplateResponse(
+            request=request, name="admin/partials/_task_detail.html", context=context
+        )
+    return templates.TemplateResponse(
+        request=request, name="admin/pages/task_detail.html", context=context
+    )
 
 
 @router.get("/projects/{project_id}")
@@ -266,7 +336,7 @@ async def project_detail(
     version_repo = ProjectPromptVersionRepo(session)
     event_repo = SystemEventRepo(session)
 
-    projects_svc = AdminProjectsService(project_repo, alias_repo)
+    projects_svc = AdminProjectsService(project_repo, alias_repo, event_repo)
     prompt_svc = PromptVersioningService(version_repo, event_repo)
 
     result = await projects_svc.get_project_detail(session, project_id)
@@ -284,8 +354,12 @@ async def project_detail(
     }
 
     if is_htmx(request) and not is_htmx_boosted(request):
-        return templates.TemplateResponse(request=request, name="admin/partials/_project_detail.html", context=context)
-    return templates.TemplateResponse(request=request, name="admin/pages/project_detail.html", context=context)
+        return templates.TemplateResponse(
+            request=request, name="admin/partials/_project_detail.html", context=context
+        )
+    return templates.TemplateResponse(
+        request=request, name="admin/pages/project_detail.html", context=context
+    )
 
 
 @router.post("/projects/{project_id}/prompts")
@@ -382,7 +456,9 @@ async def view_prompt_version(
         "project_id": project_id,
     }
 
-    return templates.TemplateResponse(request=request, name="admin/partials/_prompt_detail_modal.html", context=context)
+    return templates.TemplateResponse(
+        request=request, name="admin/partials/_prompt_detail_modal.html", context=context
+    )
 
 
 @router.get("/projects/{project_id}/prompts/{version_id}/edit")
@@ -405,7 +481,9 @@ async def edit_prompt_version(
         "project_id": project_id,
     }
 
-    return templates.TemplateResponse(request=request, name="admin/partials/_prompt_edit_modal.html", context=context)
+    return templates.TemplateResponse(
+        request=request, name="admin/partials/_prompt_edit_modal.html", context=context
+    )
 
 
 @router.post("/projects/{project_id}/prompts/{version_id}/edit")

@@ -12,12 +12,12 @@ from apps.api.services.google_tasks_service import GoogleTasksService
 from core.domain.enums import ProjectType
 from core.utils.text import slugify
 from db.models.project import Project
+from db.models.system_event import SystemEvent
 from db.repositories.project_repo import ProjectRepository
+from db.repositories.system_event_repo import SystemEventRepo
 
 logger = get_logger(__name__)
 
-# Keyword-based project type classification.
-# Sync must be read-only with no LLM calls (ARCHITECTURE_CONTRACT).
 _TYPE_KEYWORDS: list[tuple[re.Pattern[str], ProjectType]] = [
     (re.compile(r"\b(client|customer|freelance|contract)\b", re.I), ProjectType.CLIENT),
     (re.compile(r"\b(family|home|house|kids?|partner)\b", re.I), ProjectType.FAMILY),
@@ -25,6 +25,11 @@ _TYPE_KEYWORDS: list[tuple[re.Pattern[str], ProjectType]] = [
     (re.compile(r"\b(writ(e|ing)|blog|article|newsletter|draft)\b", re.I), ProjectType.WRITING),
     (re.compile(r"\b(internal|admin|backoffice|tooling)\b", re.I), ProjectType.INTERNAL),
 ]
+
+EVENT_PROJECT_DISCOVERED = "project_discovered"
+EVENT_PROJECT_RENAMED = "project_renamed"
+EVENT_PROJECT_DELETED = "project_deleted"
+EVENT_PROJECT_REACTIVATED = "project_reactivated"
 
 
 class ProjectSyncResult(TypedDict):
@@ -39,21 +44,38 @@ class ProjectSyncService:
         self,
         google_tasks: GoogleTasksService,
         project_repo: ProjectRepository,
+        event_repo: SystemEventRepo | None = None,
     ) -> None:
         self._google_tasks = google_tasks
         self._project_repo = project_repo
+        self._event_repo = event_repo
 
     @staticmethod
     def _classify_type(name: str) -> ProjectType:
-        """Classify project type from list name using keyword heuristics.
-
-        No LLM call — sync must stay read-only per ARCHITECTURE_CONTRACT.
-        Falls back to PERSONAL when no keywords match.
-        """
         for pattern, project_type in _TYPE_KEYWORDS:
             if pattern.search(name):
                 return project_type
         return ProjectType.PERSONAL
+
+    async def _emit_event(
+        self,
+        event_type: str,
+        message: str,
+        project_id: uuid.UUID,
+        payload: dict[str, object] | None = None,
+    ) -> None:
+        if self._event_repo is None:
+            return
+        event = SystemEvent(
+            id=uuid.uuid4(),
+            event_type=event_type,
+            severity="info",
+            subsystem="project_sync",
+            message=message,
+            project_id=project_id,
+            payload_json=payload,
+        )
+        await self._event_repo.create(event)
 
     async def sync_from_google(
         self,
@@ -79,23 +101,46 @@ class ProjectSyncService:
             new_slug = slugify(tl_title)
 
             if existing is not None:
+                existing.last_seen_at = now
                 changes: list[str] = []
+
                 if not existing.is_active:
                     existing.is_active = True
+                    existing.deleted_at = None
                     changes.append("reactivated")
+                    await self._emit_event(
+                        EVENT_PROJECT_REACTIVATED,
+                        f"Project '{tl_title}' reappeared in Google Tasks",
+                        existing.id,
+                        {"google_tasklist_id": tl_id},
+                    )
+
                 if existing.name != tl_title:
+                    old_name = existing.name
+                    existing.last_synced_name = old_name
                     existing.name = tl_title
                     existing.slug = new_slug
                     changes.append("renamed")
+                    await self._emit_event(
+                        EVENT_PROJECT_RENAMED,
+                        f"Project renamed from '{old_name}' to '{tl_title}'",
+                        existing.id,
+                        {
+                            "old_name": old_name,
+                            "new_name": tl_title,
+                            "google_tasklist_id": tl_id,
+                        },
+                    )
+
                 if changes:
                     existing.updated_at = now
                     await self._project_repo.save(existing)
                     updated.append(tl_title)
                     logger.info("project_sync_updated", name=tl_title, changes=changes)
                 else:
+                    await self._project_repo.save(existing)
                     skipped.append(tl_title)
             else:
-                # Avoid slug collision
                 slug = new_slug
                 if await self._project_repo.get_by_slug(slug) is not None:
                     slug = f"{slug}-{tl_id[:6].lower()}"
@@ -112,6 +157,8 @@ class ProjectSyncService:
                     google_tasklist_id=tl_id,
                     project_type=project_type,
                     is_active=True,
+                    first_seen_at=now,
+                    last_seen_at=now,
                     created_at=now,
                     updated_at=now,
                 )
@@ -119,15 +166,29 @@ class ProjectSyncService:
                 created.append(tl_title)
                 logger.info("project_sync_created", name=tl_title, type=project_type.value)
 
-        # Deactivate projects whose tasklists no longer exist in Google Tasks
+                await self._emit_event(
+                    EVENT_PROJECT_DISCOVERED,
+                    f"New project '{tl_title}' discovered from Google Tasks",
+                    project.id,
+                    {"google_tasklist_id": tl_id, "project_type": project_type.value},
+                )
+
         all_projects = await self._project_repo.list_all()
         for proj in all_projects:
             if proj.is_active and proj.google_tasklist_id not in seen_ids:
                 proj.is_active = False
+                proj.deleted_at = now
                 proj.updated_at = now
                 await self._project_repo.save(proj)
                 deactivated.append(proj.name)
                 logger.info("project_sync_deactivated", name=proj.name)
+
+                await self._emit_event(
+                    EVENT_PROJECT_DELETED,
+                    f"Project '{proj.name}' no longer found in Google Tasks",
+                    proj.id,
+                    {"google_tasklist_id": proj.google_tasklist_id},
+                )
 
         await session.commit()
         logger.info(

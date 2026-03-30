@@ -7,12 +7,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.logging import get_logger
 from core.schemas.admin import ProjectDetailResult, ProjectListResult, ProjectWithStats
+from db.models.system_event import SystemEvent
 from db.models.task_record import TaskRecord
 from db.models.task_snapshot import TaskSnapshot
 from db.repositories.project_alias_repo import ProjectAliasRepo
 from db.repositories.project_repo import ProjectRepository
+from db.repositories.system_event_repo import SystemEventRepo
 
 logger = get_logger(__name__)
+
+_PROJECT_EVENT_TYPES = frozenset(
+    {
+        "project_discovered",
+        "project_renamed",
+        "project_deleted",
+        "project_reactivated",
+    }
+)
 
 
 class AdminProjectsService:
@@ -20,9 +31,11 @@ class AdminProjectsService:
         self,
         project_repo: ProjectRepository,
         alias_repo: ProjectAliasRepo,
+        event_repo: SystemEventRepo | None = None,
     ) -> None:
         self._project_repo = project_repo
         self._alias_repo = alias_repo
+        self._event_repo = event_repo
 
     async def _count_tasks_for_project(self, session: AsyncSession, project_id: uuid.UUID) -> int:
         count_result = await session.execute(
@@ -38,8 +51,15 @@ class AdminProjectsService:
         )
         return count_result.scalar_one()
 
-    async def list_projects(self, session: AsyncSession) -> ProjectListResult:
-        projects = await self._project_repo.list_active()
+    async def list_projects(
+        self,
+        session: AsyncSession,
+        include_deleted: bool = True,
+    ) -> ProjectListResult:
+        if include_deleted:
+            projects = await self._project_repo.list_all_including_deleted()
+        else:
+            projects = await self._project_repo.list_active()
 
         items: list[ProjectWithStats] = []
         for project in projects:
@@ -66,8 +86,21 @@ class AdminProjectsService:
         task_count = await self._count_tasks_for_project(session, project_id)
         aliases = await self._alias_repo.list_by_project(project_id)
 
+        recent_events: list[SystemEvent] = []
+        if self._event_repo is not None:
+            all_project_events = await self._event_repo.list_events(
+                subsystem="project_sync",
+                limit=20,
+            )
+            recent_events = [
+                e
+                for e in all_project_events
+                if e.project_id == project_id and e.event_type in _PROJECT_EVENT_TYPES
+            ]
+
         return ProjectDetailResult(
             project=project,
             task_count=task_count,
             aliases=aliases,
+            recent_events=recent_events,
         )
