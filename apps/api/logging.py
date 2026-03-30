@@ -42,7 +42,8 @@ def configure_logging() -> None:
     )
 
     # Route SQL logs through the app logger instead of SQLAlchemy's echo handler.
-    engine_level = logging.INFO if settings.app_env == "development" else logging.WARNING
+    # Only show SQL at DEBUG; INFO floods logs with every query on each poll cycle.
+    engine_level = logging.DEBUG if log_level <= logging.DEBUG else logging.WARNING
     logging.getLogger("sqlalchemy.engine").setLevel(engine_level)
     logging.getLogger("sqlalchemy.engine.Engine").setLevel(engine_level)
 
