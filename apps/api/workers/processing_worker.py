@@ -364,7 +364,10 @@ async def _process_entry(
     from apps.api.services.review_queue_service import ReviewQueueService
 
     queue_svc = ReviewQueueService(session, telegram)
-    await queue_svc.send_next()
+    try:
+        await queue_svc.send_next()
+    finally:
+        await telegram.aclose()
 
     logger.info(
         "processing_complete",

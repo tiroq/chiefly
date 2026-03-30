@@ -168,21 +168,27 @@ def _build_telegram_dispatcher():
         factory = get_session_factory()
         tg = TelegramService(settings.telegram_bot_token, settings.telegram_chat_id)
 
-        async with factory() as session:
-            queue_svc = _queue_service(session, tg)
-            sent = await queue_svc.send_next()
+        try:
+            async with factory() as session:
+                queue_svc = _queue_service(session, tg)
+                sent = await queue_svc.send_next()
 
-        if not sent:
-            await message.answer("✅ No more items in the review queue.")
+            if not sent:
+                await message.answer("✅ No more items in the review queue.")
+        finally:
+            await tg.aclose()
 
     @dp.message(Command("backlog"))
     async def cmd_backlog(message: Message):
         factory = get_session_factory()
         tg = TelegramService(settings.telegram_bot_token, settings.telegram_chat_id)
 
-        async with factory() as session:
-            queue_svc = _queue_service(session, tg)
-            status = await queue_svc.get_queue_status()
+        try:
+            async with factory() as session:
+                queue_svc = _queue_service(session, tg)
+                status = await queue_svc.get_queue_status()
+        finally:
+            await tg.aclose()
 
         total_queued = status["total_queued"] if isinstance(status["total_queued"], int) else 0
         has_active = bool(status["has_active"])
@@ -363,6 +369,7 @@ def _build_telegram_dispatcher():
         async with factory() as session:
             queue_svc = _queue_service(session, tg)
             await queue_svc.send_next()
+        await tg.aclose()
 
     @dp.callback_query(F.data.startswith("discard:"))
     async def handle_discard(callback: CallbackQuery):
@@ -432,6 +439,7 @@ def _build_telegram_dispatcher():
         async with factory() as session:
             queue_svc = _queue_service(session, tg)
             await queue_svc.send_next()
+        await tg.aclose()
 
     @dp.callback_query(F.data.startswith("change_project:"))
     async def handle_change_project(callback: CallbackQuery):
@@ -465,6 +473,7 @@ def _build_telegram_dispatcher():
             current_project=current_project_name,
         )
         await callback.answer()
+        await tg.aclose()
 
     @dp.callback_query(F.data.startswith("change_type:"))
     async def handle_change_type(callback: CallbackQuery):
@@ -475,6 +484,7 @@ def _build_telegram_dispatcher():
         tg = TelegramService(settings.telegram_bot_token, settings.telegram_chat_id)
         await tg.send_kind_picker(task_id=payload.task_id)
         await callback.answer()
+        await tg.aclose()
 
     @dp.callback_query(F.data.startswith("edit:"))
     async def handle_edit(callback: CallbackQuery):
@@ -641,6 +651,7 @@ def _build_telegram_dispatcher():
         tg = TelegramService(settings.telegram_bot_token, settings.telegram_chat_id)
         safe_title = html_mod.escape(new_title)
         await tg.send_text(f"✅ Title updated to: <i>{safe_title}</i>")
+        await tg.aclose()
 
     return dp
 

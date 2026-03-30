@@ -22,15 +22,18 @@ async def run_daily_review() -> None:
     llm = LLMService(settings.llm_provider, settings.llm_model, settings.llm_api_key, settings.llm_base_url)
 
     factory = get_session_factory()
-    async with factory() as session:
-        service = DailyReviewService(
-            session=session,
-            telegram=telegram,
-            llm=llm,
-        )
-        try:
-            snapshot = await service.generate_and_send()
-            logger.info("daily_review_complete", snapshot_id=str(snapshot.id))
-        except Exception as e:
-            logger.error("daily_review_failed", error=str(e))
-            await session.rollback()
+    try:
+        async with factory() as session:
+            service = DailyReviewService(
+                session=session,
+                telegram=telegram,
+                llm=llm,
+            )
+            try:
+                snapshot = await service.generate_and_send()
+                logger.info("daily_review_complete", snapshot_id=str(snapshot.id))
+            except Exception as e:
+                logger.error("daily_review_failed", error=str(e))
+                await session.rollback()
+    finally:
+        await telegram.aclose()

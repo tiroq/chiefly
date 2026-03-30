@@ -77,6 +77,18 @@ class TelegramService:
         self._chat_id = chat_id
         self._bot = None
 
+    async def aclose(self) -> None:
+        """Close the underlying aiohttp session opened by the Bot."""
+        if self._bot is not None:
+            await self._bot.session.close()
+            self._bot = None
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_):
+        await self.aclose()
+
     def _get_bot(self):
         if self._bot is None:
             from aiogram import Bot

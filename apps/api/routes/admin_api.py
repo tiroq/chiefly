@@ -216,12 +216,15 @@ async def resend_proposal(
             bot_token=settings.telegram_bot_token,
             chat_id=settings.telegram_chat_id,
         )
-        await telegram_svc.send_proposal(
-            task_id=str(stable_id),
-            raw_text=raw_text,
-            classification=classification,
-            project_name=project_name,
-        )
+        try:
+            await telegram_svc.send_proposal(
+                task_id=str(stable_id),
+                raw_text=raw_text,
+                classification=classification,
+                project_name=project_name,
+            )
+        finally:
+            await telegram_svc.aclose()
 
         await session.commit()
 

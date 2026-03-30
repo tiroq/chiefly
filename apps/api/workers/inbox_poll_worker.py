@@ -33,44 +33,47 @@ async def run_inbox_poll() -> None:
     telegram = TelegramService(settings.telegram_bot_token, settings.telegram_chat_id)
 
     factory = get_session_factory()
-    async with factory() as session:
-        alias_repo = ProjectAliasRepo(session)
-        classification = ClassificationService(llm, routing, alias_repo=alias_repo)
-        intake_service = IntakeService(
-            session=session,
-            google_tasks=google_tasks,
-            classification=classification,
-            telegram=telegram,
-        )
-        
-        # Initialize change monitoring
-        change_monitor = TaskChangeMonitor(session)
-        alert_service = AlertService(telegram, session)
-        
-        try:
-            # Capture baseline state before pulling
-            await change_monitor.capture_baseline()
-            logger.info("inbox_poll_baseline_captured")
+    try:
+        async with factory() as session:
+            alias_repo = ProjectAliasRepo(session)
+            classification = ClassificationService(llm, routing, alias_repo=alias_repo)
+            intake_service = IntakeService(
+                session=session,
+                google_tasks=google_tasks,
+                classification=classification,
+                telegram=telegram,
+            )
             
-            # Process inbox
-            count = await intake_service.poll_and_process()
-            logger.info("inbox_poll_complete", processed=count)
+            # Initialize change monitoring
+            change_monitor = TaskChangeMonitor(session)
+            alert_service = AlertService(telegram, session)
             
-            # Detect changes after processing
-            changes = await change_monitor.detect_changes()
-            logger.info("inbox_poll_changes_detected", changes_count=len(changes))
-            
-            # Log all changes to SystemEvent
-            if changes:
-                await change_monitor.log_all_changes()
+            try:
+                # Capture baseline state before pulling
+                await change_monitor.capture_baseline()
+                logger.info("inbox_poll_baseline_captured")
                 
-                # Send alerts about changes
-                alert_result = await alert_service.alert_task_changes(
-                    changes,
-                    operation="inbox_poll",
-                )
-                logger.info("inbox_poll_alert_sent", alert_result=alert_result)
+                # Process inbox
+                count = await intake_service.poll_and_process()
+                logger.info("inbox_poll_complete", processed=count)
                 
-        except Exception as e:
-            logger.error("inbox_poll_failed", error=str(e))
-            await session.rollback()
+                # Detect changes after processing
+                changes = await change_monitor.detect_changes()
+                logger.info("inbox_poll_changes_detected", changes_count=len(changes))
+                
+                # Log all changes to SystemEvent
+                if changes:
+                    await change_monitor.log_all_changes()
+                    
+                    # Send alerts about changes
+                    alert_result = await alert_service.alert_task_changes(
+                        changes,
+                        operation="inbox_poll",
+                    )
+                    logger.info("inbox_poll_alert_sent", alert_result=alert_result)
+                    
+            except Exception as e:
+                logger.error("inbox_poll_failed", error=str(e))
+                await session.rollback()
+    finally:
+        await telegram.aclose()

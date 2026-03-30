@@ -33,38 +33,41 @@ async def run_project_sync() -> None:
     telegram = TelegramService(settings.telegram_bot_token, settings.telegram_chat_id)
 
     factory = get_session_factory()
-    async with factory() as session:
-        project_repo = ProjectRepository(session)
-        sync_service = ProjectSyncService(google_tasks, project_repo, llm=llm)
-        
-        # Initialize change monitoring
-        change_monitor = TaskChangeMonitor(session)
-        alert_service = AlertService(telegram, session)
-        
-        try:
-            # Capture baseline state before syncing
-            await change_monitor.capture_baseline()
-            logger.info("project_sync_baseline_captured")
+    try:
+        async with factory() as session:
+            project_repo = ProjectRepository(session)
+            sync_service = ProjectSyncService(google_tasks, project_repo, llm=llm)
             
-            # Sync projects and tasks
-            result = await sync_service.sync_from_google(session, settings.google_tasks_inbox_list_id)
-            logger.info("project_sync_complete", **result)
+            # Initialize change monitoring
+            change_monitor = TaskChangeMonitor(session)
+            alert_service = AlertService(telegram, session)
             
-            # Detect changes after sync
-            changes = await change_monitor.detect_changes()
-            logger.info("project_sync_changes_detected", changes_count=len(changes))
-            
-            # Log all changes to SystemEvent
-            if changes:
-                await change_monitor.log_all_changes()
+            try:
+                # Capture baseline state before syncing
+                await change_monitor.capture_baseline()
+                logger.info("project_sync_baseline_captured")
                 
-                # Send alerts about changes
-                alert_result = await alert_service.alert_task_changes(
-                    changes,
-                    operation="project_sync",
-                )
-                logger.info("project_sync_alert_sent", alert_result=alert_result)
+                # Sync projects and tasks
+                result = await sync_service.sync_from_google(session, settings.google_tasks_inbox_list_id)
+                logger.info("project_sync_complete", **result)
                 
-        except Exception as e:
-            logger.error("project_sync_failed", error=str(e))
-            await session.rollback()
+                # Detect changes after sync
+                changes = await change_monitor.detect_changes()
+                logger.info("project_sync_changes_detected", changes_count=len(changes))
+                
+                # Log all changes to SystemEvent
+                if changes:
+                    await change_monitor.log_all_changes()
+                    
+                    # Send alerts about changes
+                    alert_result = await alert_service.alert_task_changes(
+                        changes,
+                        operation="project_sync",
+                    )
+                    logger.info("project_sync_alert_sent", alert_result=alert_result)
+                    
+            except Exception as e:
+                logger.error("project_sync_failed", error=str(e))
+                await session.rollback()
+    finally:
+        await telegram.aclose()
