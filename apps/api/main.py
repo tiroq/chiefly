@@ -18,7 +18,6 @@ from apps.api.routes.admin_api import router as admin_api_router
 from apps.api.admin.auth import create_login_router, htmx_exception_handler
 from apps.api.services.scheduler_service import setup_scheduler
 from apps.api.workers.daily_review_worker import run_daily_review
-from apps.api.workers.inbox_poll_worker import run_inbox_poll
 from apps.api.workers.processing_worker import run_processing
 from apps.api.workers.project_sync_worker import run_project_sync
 from apps.api.workers.sync_worker import run_sync
@@ -32,12 +31,13 @@ def _build_telegram_dispatcher():
 
     from aiogram import Dispatcher, F
     from aiogram.filters import Command
-    from aiogram.types import CallbackQuery, Message
+    from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
     from apps.api.services.classification_service import ClassificationService
     from apps.api.services.google_tasks_service import GoogleTasksService
     from apps.api.services.llm_service import LLMService
     from apps.api.services.project_routing_service import ProjectRoutingService
+    from apps.api.services.review_pause import toggle_review_pause
     from apps.api.services.telegram_service import TelegramService
     from core.domain.enums import ReviewAction, TaskKind, WorkflowStatus
     from core.domain.exceptions import TaskNotFoundError
@@ -74,6 +74,7 @@ def _build_telegram_dispatcher():
             "/today – show today's tasks\n"
             "/next – show next item to review\n"
             "/backlog – show review queue\n"
+            "/pause – pause/resume review queue\n"
             "/review – generate and send daily review\n"
             "/stats – show task statistics"
         )
@@ -88,9 +89,18 @@ def _build_telegram_dispatcher():
             "/projects – list available projects\n"
             "/next – show next item to review\n"
             "/backlog – show review queue\n"
+            "/pause – pause/resume review queue\n"
             "/review – trigger daily review now\n"
             "/stats – task counts by status"
         )
+
+    @dp.message(Command("pause"))
+    async def cmd_pause(message: Message):
+        paused = toggle_review_pause()
+        if paused:
+            await message.answer("⏸ Review queue paused. Send /pause again to resume.")
+            return
+        await message.answer("▶️ Review queue resumed.")
 
     @dp.message(Command("inbox"))
     async def cmd_inbox(message: Message):
@@ -376,7 +386,42 @@ def _build_telegram_dispatcher():
         if not callback.data:
             await callback.answer("Invalid callback.", show_alert=True)
             return
+
         payload = CallbackPayload.decode(callback.data)
+        msg = callback.message
+        title = "this task"
+        if isinstance(msg, Message):
+            msg_text = msg.text or ""
+            for line in msg_text.splitlines():
+                if "Title:" in line:
+                    title = line.split("Title:", 1)[1].strip()
+                    break
+
+            keyboard = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(
+                            text="✅ Yes, discard",
+                            callback_data=f"discard_confirm:{payload.task_id}",
+                        ),
+                        InlineKeyboardButton(
+                            text="❌ Cancel",
+                            callback_data=f"discard_cancel:{payload.task_id}",
+                        ),
+                    ]
+                ]
+            )
+            await msg.edit_text(f"⚠️ Discard this task?\n\n{title}", reply_markup=keyboard)
+
+        await callback.answer("Are you sure?")
+
+    @dp.callback_query(F.data.startswith("discard_confirm:"))
+    async def handle_discard_confirm(callback: CallbackQuery):
+        if not callback.data:
+            await callback.answer("Invalid callback.", show_alert=True)
+            return
+
+        task_id = callback.data.split(":", 1)[1]
         factory = get_session_factory()
         tg = TelegramService(settings.telegram_bot_token, settings.telegram_chat_id)
 
@@ -390,7 +435,7 @@ def _build_telegram_dispatcher():
             revision_repo = TaskRevisionRepository(session)
 
             try:
-                review_session = await _get_review_session(payload.task_id, session)
+                review_session = await _get_review_session(task_id, session)
             except TaskNotFoundError:
                 await callback.answer("Task not found!", show_alert=True)
                 return
@@ -440,6 +485,13 @@ def _build_telegram_dispatcher():
             queue_svc = _queue_service(session, tg)
             await queue_svc.send_next()
         await tg.aclose()
+
+    @dp.callback_query(F.data.startswith("discard_cancel:"))
+    async def handle_discard_cancel(callback: CallbackQuery):
+        if not callback.data:
+            await callback.answer("Invalid callback.", show_alert=True)
+            return
+        await callback.answer("Cancelled")
 
     @dp.callback_query(F.data.startswith("change_project:"))
     async def handle_change_project(callback: CallbackQuery):
