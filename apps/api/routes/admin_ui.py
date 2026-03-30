@@ -4,6 +4,7 @@ import uuid
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
+from markupsafe import Markup
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.domain.enums import TaskKind, WorkflowStatus
@@ -30,6 +31,7 @@ from db.repositories.task_revision_repo import TaskRevisionRepository
 settings = get_settings()
 router = APIRouter(dependencies=[Depends(require_admin(settings.admin_token))])
 templates = Jinja2Templates(directory="apps/api/templates")
+templates.env.filters["tojson"] = lambda v, indent=None: Markup(json.dumps(v, ensure_ascii=False, indent=indent))
 
 
 @router.get("/")

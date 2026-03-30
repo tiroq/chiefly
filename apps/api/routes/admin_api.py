@@ -2,12 +2,14 @@
 Admin action API routes for task management: retry, re-classify, re-send.
 """
 
+import json
 import uuid
 
 import structlog
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.templating import Jinja2Templates
+from markupsafe import Markup
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.admin.auth import require_admin
@@ -43,6 +45,7 @@ from db.repositories.task_snapshot_repo import TaskSnapshotRepository
 logger = structlog.get_logger(__name__)
 
 templates = Jinja2Templates(directory="apps/api/templates")
+templates.env.filters["tojson"] = lambda v, indent=None: Markup(json.dumps(v, ensure_ascii=False, indent=indent))
 
 settings = get_settings()
 router = APIRouter(
