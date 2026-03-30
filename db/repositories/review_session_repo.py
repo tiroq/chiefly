@@ -111,3 +111,20 @@ class ReviewSessionRepository:
             .limit(limit)
         )
         return list(result.scalars().all())
+
+    async def list_skipped(self, limit: int = 20) -> list[TelegramReviewSession]:
+        result = await self._session.execute(
+            select(TelegramReviewSession)
+            .where(TelegramReviewSession.status == "skipped")
+            .order_by(TelegramReviewSession.created_at.asc())
+            .limit(limit)
+        )
+        return list(result.scalars().all())
+
+    async def count_by_status(self, status: str) -> int:
+        result = await self._session.execute(
+            select(func.count(TelegramReviewSession.id)).where(
+                TelegramReviewSession.status == status
+            )
+        )
+        return result.scalar() or 0
