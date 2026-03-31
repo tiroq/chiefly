@@ -49,6 +49,7 @@ class TaskProcessingQueue(Base):
     retry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     max_retries: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    not_before: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     locked_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -67,4 +68,5 @@ class TaskProcessingQueue(Base):
         Index("ix_tpq_source_task_id", "source_task_id"),
         Index("ix_tpq_created_at", "created_at"),
         Index("ix_tpq_status_created", "processing_status", "created_at"),
+        Index("ix_tpq_not_before", "not_before"),
     )

@@ -1,11 +1,13 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.domain.enums import ProcessingReason, ProcessingStatus
 from db.models.task_processing_queue import TaskProcessingQueue
+
+STALE_LOCK_TIMEOUT_SECONDS = 600
 
 
 class ProcessingQueueRepository:
@@ -49,10 +51,26 @@ class ProcessingQueueRepository:
         """
         Atomically claim the next pending queue entry using SELECT FOR UPDATE SKIP LOCKED.
         Implements latest-only: skips older entries if newer exists for same source_task_id.
+        Respects not_before: skips entries whose retry delay has not yet elapsed.
+        Reclaims stale LOCKED/PROCESSING entries older than STALE_LOCK_TIMEOUT_SECONDS.
         """
+        now = datetime.now(tz=timezone.utc)
+        stale_cutoff = now - timedelta(seconds=STALE_LOCK_TIMEOUT_SECONDS)
         stmt = (
             select(TaskProcessingQueue)
-            .where(TaskProcessingQueue.processing_status == ProcessingStatus.PENDING)
+            .where(
+                or_(
+                    (TaskProcessingQueue.processing_status == ProcessingStatus.PENDING)
+                    & or_(
+                        TaskProcessingQueue.not_before.is_(None),
+                        TaskProcessingQueue.not_before <= now,
+                    ),
+                    (TaskProcessingQueue.processing_status == ProcessingStatus.LOCKED)
+                    & (TaskProcessingQueue.locked_at < stale_cutoff),
+                    (TaskProcessingQueue.processing_status == ProcessingStatus.PROCESSING)
+                    & (TaskProcessingQueue.locked_at < stale_cutoff),
+                ),
+            )
             .order_by(TaskProcessingQueue.created_at.asc())
             .limit(1)
             .with_for_update(skip_locked=True)
@@ -113,13 +131,15 @@ class ProcessingQueueRepository:
         )
         await self._session.flush()
 
-    async def fail(self, entry_id: uuid.UUID, error_message: str) -> None:
+    async def fail(
+        self, entry_id: uuid.UUID, error_message: str, not_before: datetime | None = None
+    ) -> ProcessingStatus:
         result = await self._session.execute(
             select(TaskProcessingQueue).where(TaskProcessingQueue.id == entry_id)
         )
         entry = result.scalar_one_or_none()
         if entry is None:
-            return
+            return ProcessingStatus.FAILED
 
         now = datetime.now(tz=timezone.utc)
         new_retry_count = entry.retry_count + 1
@@ -128,6 +148,8 @@ class ProcessingQueueRepository:
             new_status = ProcessingStatus.FAILED
         else:
             new_status = ProcessingStatus.PENDING
+
+        effective_not_before = not_before if new_status == ProcessingStatus.PENDING else None
 
         await self._session.execute(
             update(TaskProcessingQueue)
@@ -138,6 +160,26 @@ class ProcessingQueueRepository:
                 error_message=error_message,
                 locked_at=None,
                 locked_by=None,
+                not_before=effective_not_before,
+                updated_at=now,
+            )
+        )
+        await self._session.flush()
+        return new_status
+
+    async def requeue_with_delay(
+        self, entry_id: uuid.UUID, error_message: str, not_before: datetime
+    ) -> None:
+        now = datetime.now(tz=timezone.utc)
+        await self._session.execute(
+            update(TaskProcessingQueue)
+            .where(TaskProcessingQueue.id == entry_id)
+            .values(
+                processing_status=ProcessingStatus.PENDING,
+                error_message=error_message,
+                locked_at=None,
+                locked_by=None,
+                not_before=not_before,
                 updated_at=now,
             )
         )
