@@ -1,0 +1,52 @@
+@import "tailwindcss";
+
+/*
+ * Telegram WebApp theme integration.
+ * The Telegram SDK injects CSS variables on <html> that we map to Tailwind-consumable vars.
+ * See: https://core.telegram.org/bots/webapps#themeparams
+ */
+@theme {
+  --color-tg-bg: var(--tg-theme-bg-color, #ffffff);
+  --color-tg-text: var(--tg-theme-text-color, #000000);
+  --color-tg-hint: var(--tg-theme-hint-color, #999999);
+  --color-tg-link: var(--tg-theme-link-color, #2481cc);
+  --color-tg-button: var(--tg-theme-button-color, #2481cc);
+  --color-tg-button-text: var(--tg-theme-button-text-color, #ffffff);
+  --color-tg-secondary-bg: var(--tg-theme-secondary-bg-color, #f0f0f0);
+  --color-tg-header-bg: var(--tg-theme-header-bg-color, #ffffff);
+  --color-tg-accent: var(--tg-theme-accent-text-color, #2481cc);
+  --color-tg-section-bg: var(--tg-theme-section-bg-color, #ffffff);
+  --color-tg-section-header: var(--tg-theme-section-header-text-color, #6d6d72);
+  --color-tg-subtitle: var(--tg-theme-subtitle-text-color, #8e8e93);
+  --color-tg-destructive: var(--tg-theme-destructive-text-color, #ff3b30);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  overflow-x: hidden;
+}
+
+body {
+  font-family: -apple-system, "SF Pro Text", "Helvetica Neue", sans-serif;
+  background-color: var(--tg-theme-bg-color, #ffffff);
+  color: var(--tg-theme-text-color, #000000);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+::-webkit-scrollbar {
+  width: 0;
+  background: transparent;
+}
