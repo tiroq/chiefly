@@ -1,10 +1,13 @@
-.PHONY: install dev test lint migrate seed docker-up docker-down docker-logs docker-dev docker-dev-logs docker-dev-stop
+.PHONY: install dev admin test lint migrate seed docker-up docker-down docker-logs docker-dev docker-dev-logs docker-dev-stop miniapp-build miniapp-dev
 
 install:
 	pip install -e ".[dev]"
 
 dev:
 	uvicorn apps.api.main:app --reload --reload-dir apps --reload-dir core --reload-dir db --host 0.0.0.0 --port 8000 --log-level debug
+
+admin:
+	uvicorn apps.admin.main:app --host 127.0.0.1 --port 8001 --log-level info
 
 test:
 	pytest tests/ -v
@@ -44,3 +47,9 @@ docker-dev-logs:
 
 docker-dev-stop:
 	docker compose -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.dev.yml down
+
+miniapp-build:
+	cd apps/miniapp && npm run build
+
+miniapp-dev:
+	cd apps/miniapp && npm run dev
