@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from apps.api.config import get_settings
 from apps.api.logging import get_logger
@@ -14,18 +14,20 @@ from apps.api.services.revision_service import RevisionService
 from apps.api.services.telegram_service import TelegramService
 from core.domain import notes_codec
 from core.domain.enums import (
-    ProcessingStatus,
     TaskRecordState,
     WorkflowStatus,
 )
+from core.domain.exceptions import RateLimitError
 from db.models.task_record import TaskRecord
 from db.models.task_revision import TaskRevision
 from db.models.telegram_review_session import TelegramReviewSession
+from db.models.system_event import SystemEvent
 from db.repositories.processing_queue_repo import ProcessingQueueRepository
 from db.repositories.project_alias_repo import ProjectAliasRepo
 from db.repositories.project_repo import ProjectRepository
 from db.repositories.review_session_repo import ReviewSessionRepository
 from db.repositories.source_task_repo import SourceTaskRepository
+from db.repositories.system_event_repo import SystemEventRepo
 from db.repositories.task_record_repo import TaskRecordRepository
 from db.repositories.task_revision_repo import TaskRevisionRepository
 from db.repositories.task_snapshot_repo import TaskSnapshotRepository
@@ -65,6 +67,50 @@ async def run_processing() -> None:
     try:
         async with factory() as session:
             await _process_entry(session, entry_id, source_task_id, stable_id, settings)
+    except RateLimitError as e:
+        logger.warning(
+            "processing_worker_rate_limited",
+            entry_id=str(entry_id),
+            provider=e.provider,
+            retry_after_seconds=e.retry_after_seconds,
+        )
+        # --- Critical path: unlock the queue entry FIRST ---
+        # This commit is isolated so that if side-effects (TaskRecord update,
+        # SystemEvent) fail, the entry is already safely back to PENDING
+        # and will not remain permanently LOCKED.
+        async with factory() as session:
+            queue_repo = ProcessingQueueRepository(session)
+            not_before = datetime.now(tz=timezone.utc) + timedelta(seconds=e.retry_after_seconds)
+            await queue_repo.requeue_with_delay(entry_id, str(e), not_before=not_before)
+            await session.commit()
+
+        # --- Best-effort side-effects in a separate transaction ---
+        try:
+            async with factory() as session:
+                if stable_id:
+                    record_repo = TaskRecordRepository(session)
+                    await record_repo.update_processing_status(stable_id, WorkflowStatus.PENDING)
+
+                event = SystemEvent(
+                    event_type="llm_rate_limited",
+                    severity="warning",
+                    subsystem="processing",
+                    stable_id=stable_id,
+                    message=f"Rate limited by provider '{e.provider}'. Retry after {e.retry_after_seconds:.0f}s.",
+                    payload_json={
+                        "provider": e.provider,
+                        "retry_after_seconds": e.retry_after_seconds,
+                    },
+                )
+                event_repo = SystemEventRepo(session)
+                await event_repo.create(event)
+                await session.commit()
+        except Exception as side_effect_err:
+            logger.error(
+                "processing_worker_rate_limit_side_effects_failed",
+                entry_id=str(entry_id),
+                error=str(side_effect_err),
+            )
     except Exception as e:
         logger.error("processing_worker_failed", entry_id=str(entry_id), error=str(e))
         async with factory() as session:
@@ -375,7 +421,6 @@ async def _process_entry(
         )
         review_session.status = "send_failed"
         await review_repo.save(review_session)
-        from db.models.system_event import SystemEvent
 
         event = SystemEvent(
             event_type="telegram_send_failed",
@@ -384,7 +429,6 @@ async def _process_entry(
             stable_id=stable_id,
             message=f"Telegram send failed after review session creation: {send_err}",
         )
-        from db.repositories.system_event_repo import SystemEventRepo
 
         event_repo = SystemEventRepo(session)
         await event_repo.create(event)
