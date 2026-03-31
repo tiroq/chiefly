@@ -12,6 +12,7 @@ from apps.api.telegram.callbacks import (
     handle_queue_start,
     handle_setting_toggle,
     handle_skip,
+    handle_test_llm_connection,
 )
 from apps.api.telegram.states import ReviewStates
 
@@ -174,3 +175,80 @@ async def test_queue_start_sends_next():
         await handle_queue_start(callback)
 
     queue_svc.send_next.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_test_llm_connection_success():
+    message = MagicMock(spec=Message)
+    message.answer = AsyncMock()
+    callback = SimpleNamespace(data="settings:test_llm", message=message, answer=AsyncMock())
+
+    cm_session = _mock_async_session_cm()
+    factory = MagicMock(return_value=cm_session)
+
+    mock_config = SimpleNamespace(provider="openai", model="gpt-4o")
+    mock_client = MagicMock()
+    mock_client.chat.completions.create = MagicMock(return_value=MagicMock())
+
+    mock_llm = MagicMock()
+    mock_llm._get_client.return_value = mock_client
+
+    with (
+        patch("apps.api.telegram.callbacks.get_session_factory", return_value=factory),
+        patch(
+            "apps.api.telegram.callbacks.get_settings",
+            return_value=SimpleNamespace(telegram_bot_token="token", telegram_chat_id="123"),
+        ),
+        patch(
+            "apps.api.services.model_settings_service.get_effective_llm_config",
+            new_callable=AsyncMock,
+            return_value=mock_config,
+        ),
+        patch(
+            "apps.api.services.llm_service.LLMService.from_effective_config",
+            return_value=mock_llm,
+        ),
+    ):
+        await handle_test_llm_connection(callback)
+
+    callback.answer.assert_awaited_once()
+    message.answer.assert_awaited_once()
+    answer_text = message.answer.await_args[0][0]
+    assert "successful" in answer_text.lower()
+
+
+@pytest.mark.asyncio
+async def test_test_llm_connection_failure():
+    message = MagicMock(spec=Message)
+    message.answer = AsyncMock()
+    callback = SimpleNamespace(data="settings:test_llm", message=message, answer=AsyncMock())
+
+    cm_session = _mock_async_session_cm()
+    factory = MagicMock(return_value=cm_session)
+
+    mock_config = SimpleNamespace(provider="openai", model="gpt-4o")
+    mock_llm = MagicMock()
+    mock_llm._get_client.side_effect = RuntimeError("Connection refused")
+
+    with (
+        patch("apps.api.telegram.callbacks.get_session_factory", return_value=factory),
+        patch(
+            "apps.api.telegram.callbacks.get_settings",
+            return_value=SimpleNamespace(telegram_bot_token="token", telegram_chat_id="123"),
+        ),
+        patch(
+            "apps.api.services.model_settings_service.get_effective_llm_config",
+            new_callable=AsyncMock,
+            return_value=mock_config,
+        ),
+        patch(
+            "apps.api.services.llm_service.LLMService.from_effective_config",
+            return_value=mock_llm,
+        ),
+    ):
+        await handle_test_llm_connection(callback)
+
+    callback.answer.assert_awaited_once()
+    message.answer.assert_awaited_once()
+    answer_text = message.answer.await_args[0][0]
+    assert "failed" in answer_text.lower()

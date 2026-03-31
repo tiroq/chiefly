@@ -171,6 +171,20 @@ class TestReclassifyTask:
             patch("apps.api.routes.admin_api.ProjectRoutingService"),
             patch("apps.api.routes.admin_api.ProjectAliasRepo"),
             patch(
+                "apps.api.routes.admin_api.get_effective_llm_config",
+                new_callable=AsyncMock,
+                return_value=MagicMock(
+                    provider="openai",
+                    model="gpt-4o-mini",
+                    api_key="test-key",
+                    base_url="https://example.test/v1",
+                    fast_model="",
+                    quality_model="",
+                    fallback_model="",
+                    auto_mode=False,
+                ),
+            ),
+            patch(
                 "apps.api.routes.admin_api.settings",
                 new=MagicMock(
                     llm_provider="openai",

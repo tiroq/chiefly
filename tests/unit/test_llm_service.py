@@ -151,3 +151,327 @@ class TestDailyReviewGeneration:
         assert "Only this" in result
         assert "Waiting" not in result
         assert "Stale" not in result
+
+
+class TestProviderClientCreation:
+    def test_openai_provider_uses_api_key(self):
+        with patch("openai.OpenAI") as mock_cls:
+            svc = LLMService("openai", "gpt-4o", "sk-test-key")
+            svc._get_client()
+            mock_cls.assert_called_once_with(api_key="sk-test-key")
+
+    def test_ollama_provider_uses_local_url(self):
+        with patch("openai.OpenAI") as mock_cls:
+            svc = LLMService("ollama", "qwen3:1.7b", "")
+            svc._get_client()
+            mock_cls.assert_called_once_with(
+                base_url="http://localhost:11434/v1",
+                api_key="ollama",
+            )
+
+    def test_github_models_provider_uses_github_endpoint(self):
+        with patch("openai.OpenAI") as mock_cls:
+            svc = LLMService("github_models", "openai/gpt-4o", "ghp_test_pat")
+            svc._get_client()
+            mock_cls.assert_called_once_with(
+                base_url="https://models.github.ai/inference",
+                api_key="ghp_test_pat",
+            )
+
+    def test_github_models_provider_respects_custom_base_url(self):
+        with patch("openai.OpenAI") as mock_cls:
+            svc = LLMService(
+                "github_models", "openai/gpt-4o", "ghp_test", "https://custom.endpoint"
+            )
+            svc._get_client()
+            mock_cls.assert_called_once_with(
+                base_url="https://custom.endpoint",
+                api_key="ghp_test",
+            )
+
+
+class TestFromEffectiveConfig:
+    def test_creates_service_from_config(self):
+        from apps.api.services.model_settings_service import EffectiveLLMConfig
+
+        config = EffectiveLLMConfig(
+            provider="github_models",
+            model="openai/gpt-4o",
+            api_key="ghp_abc",
+            base_url="",
+            fast_model="openai/gpt-4o-mini",
+            quality_model="openai/gpt-4o",
+            fallback_model="openai/gpt-4o-mini",
+            auto_mode=True,
+        )
+        svc = LLMService.from_effective_config(config)
+        assert svc._provider == "github_models"
+        assert svc._model == "openai/gpt-4o"
+        assert svc._api_key == "ghp_abc"
+        assert svc._fast_model == "openai/gpt-4o-mini"
+        assert svc._quality_model == "openai/gpt-4o"
+        assert svc._fallback_model == "openai/gpt-4o-mini"
+        assert svc._auto_mode is True
+
+    def test_auto_mode_defaults_false(self):
+        svc = LLMService("openai", "gpt-4o", "key")
+        assert svc._auto_mode is False
+        assert svc._fast_model == ""
+        assert svc._quality_model == ""
+        assert svc._fallback_model == ""
+
+
+class TestResolveModel:
+    def test_returns_primary_when_auto_mode_off(self):
+        svc = LLMService(
+            "openai",
+            "gpt-4o",
+            "key",
+            fast_model="gpt-4o-mini",
+            quality_model="gpt-4o",
+            auto_mode=False,
+        )
+        assert svc._resolve_model("fast") == "gpt-4o"
+        assert svc._resolve_model("quality") == "gpt-4o"
+        assert svc._resolve_model("default") == "gpt-4o"
+
+    def test_routes_fast_when_auto_mode_on(self):
+        svc = LLMService(
+            "openai",
+            "gpt-4o",
+            "key",
+            fast_model="gpt-4o-mini",
+            auto_mode=True,
+        )
+        assert svc._resolve_model("fast") == "gpt-4o-mini"
+
+    def test_routes_quality_when_auto_mode_on(self):
+        svc = LLMService(
+            "openai",
+            "gpt-4o",
+            "key",
+            quality_model="o1-preview",
+            auto_mode=True,
+        )
+        assert svc._resolve_model("quality") == "o1-preview"
+
+    def test_falls_back_to_primary_when_tier_empty(self):
+        svc = LLMService(
+            "openai",
+            "gpt-4o",
+            "key",
+            fast_model="",
+            quality_model="",
+            auto_mode=True,
+        )
+        assert svc._resolve_model("fast") == "gpt-4o"
+        assert svc._resolve_model("quality") == "gpt-4o"
+
+    def test_default_purpose_always_returns_primary(self):
+        svc = LLMService(
+            "openai",
+            "gpt-4o",
+            "key",
+            fast_model="gpt-4o-mini",
+            quality_model="o1-preview",
+            auto_mode=True,
+        )
+        assert svc._resolve_model("default") == "gpt-4o"
+        assert svc._resolve_model() == "gpt-4o"
+
+
+class TestModelOverrideInCallLLM:
+    @pytest.mark.asyncio
+    async def test_call_and_parse_uses_resolved_model(self):
+        svc = LLMService(
+            "openai",
+            "gpt-4o",
+            "key",
+            fast_model="gpt-4o-mini",
+            auto_mode=True,
+        )
+        import json as _json
+        from core.schemas.llm import NormalizationResult
+
+        valid_response = _json.dumps(
+            {
+                "intent_summary": "test",
+                "rewritten_title": "Test task",
+                "is_multi_item": False,
+                "entities": [],
+                "language": "en",
+            }
+        )
+
+        calls = []
+
+        def capture_call(prompt, step_name="", reqid=None, task_id=None, model_override=""):
+            calls.append({"model_override": model_override})
+            return valid_response
+
+        with patch.object(svc, "_call_llm_sync", side_effect=capture_call):
+            result = await svc.normalize("test task")
+
+        assert result is not None
+        assert result.rewritten_title == "Test task"
+        assert calls[0]["model_override"] == "gpt-4o-mini"
+
+    @pytest.mark.asyncio
+    async def test_classify_uses_quality_model(self):
+        svc = LLMService(
+            "openai",
+            "gpt-4o",
+            "key",
+            quality_model="o1-preview",
+            auto_mode=True,
+        )
+        import json as _json
+        from core.schemas.llm import ClassifyRouteResult
+
+        valid_response = _json.dumps(
+            {
+                "type": "task",
+                "project": "Personal",
+                "title": "Buy groceries",
+                "next_action": "Go to store",
+                "confidence": "high",
+            }
+        )
+
+        calls = []
+
+        def capture_call(prompt, step_name="", reqid=None, task_id=None, model_override=""):
+            calls.append({"model_override": model_override})
+            return valid_response
+
+        with patch.object(svc, "_call_llm_sync", side_effect=capture_call):
+            result = await svc.classify_route_title(
+                "buy groceries", "buy stuff", "Available projects:\n- Personal"
+            )
+
+        assert result is not None
+        assert calls[0]["model_override"] == "o1-preview"
+
+
+class TestFallbackBehavior:
+    """Tests for _call_and_parse fallback logic directly (not through normalize,
+    which has its own _fallback_normalization wrapper)."""
+
+    @pytest.mark.asyncio
+    async def test_fallback_triggered_when_primary_fails(self):
+        from core.schemas.llm import NormalizationResult
+
+        svc = LLMService(
+            "openai",
+            "gpt-4o",
+            "key",
+            fallback_model="gpt-4o-mini",
+        )
+
+        valid_response = json.dumps(
+            {
+                "intent_summary": "Test task",
+                "rewritten_title": "Test task",
+                "is_multi_item": False,
+                "entities": [],
+                "language": "en",
+            }
+        )
+
+        calls = []
+
+        def tracking_call(prompt, step_name="", reqid=None, task_id=None, model_override=""):
+            calls.append(model_override)
+            if model_override != "gpt-4o-mini":
+                raise RuntimeError("primary model failed")
+            return valid_response
+
+        with patch.object(svc, "_call_llm_sync", side_effect=tracking_call):
+            result = await svc._call_and_parse("test prompt", NormalizationResult, "test_step")
+
+        assert result is not None
+        assert result.rewritten_title == "Test task"
+        primary_calls = [c for c in calls if c != "gpt-4o-mini"]
+        fallback_calls = [c for c in calls if c == "gpt-4o-mini"]
+        assert len(primary_calls) >= 1
+        assert len(fallback_calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_no_fallback_when_primary_succeeds(self):
+        from core.schemas.llm import NormalizationResult
+
+        svc = LLMService(
+            "openai",
+            "gpt-4o",
+            "key",
+            fallback_model="gpt-4o-mini",
+        )
+
+        valid_response = json.dumps(
+            {
+                "intent_summary": "Test task",
+                "rewritten_title": "Test task",
+                "is_multi_item": False,
+                "entities": [],
+                "language": "en",
+            }
+        )
+
+        calls = []
+
+        def tracking_call(prompt, step_name="", reqid=None, task_id=None, model_override=""):
+            calls.append(model_override)
+            return valid_response
+
+        with patch.object(svc, "_call_llm_sync", side_effect=tracking_call):
+            result = await svc._call_and_parse("test prompt", NormalizationResult, "test_step")
+
+        assert result is not None
+        fallback_calls = [c for c in calls if c == "gpt-4o-mini"]
+        assert len(fallback_calls) == 0
+
+    @pytest.mark.asyncio
+    async def test_no_fallback_when_fallback_model_not_set(self):
+        from core.schemas.llm import NormalizationResult
+
+        svc = LLMService(
+            "openai",
+            "gpt-4o",
+            "key",
+        )
+
+        calls = []
+
+        def tracking_call(prompt, step_name="", reqid=None, task_id=None, model_override=""):
+            calls.append(model_override)
+            raise RuntimeError("always fails")
+
+        with patch.object(svc, "_call_llm_sync", side_effect=tracking_call):
+            result = await svc._call_and_parse("test prompt", NormalizationResult, "test_step")
+
+        assert result is None
+        assert all(c != "gpt-4o-mini" for c in calls)
+
+    @pytest.mark.asyncio
+    async def test_fallback_not_triggered_when_same_as_primary(self):
+        from core.schemas.llm import NormalizationResult
+
+        svc = LLMService(
+            "openai",
+            "gpt-4o",
+            "key",
+            fallback_model="gpt-4o",
+        )
+
+        call_count = 0
+
+        def tracking_call(prompt, step_name="", reqid=None, task_id=None, model_override=""):
+            nonlocal call_count
+            call_count += 1
+            raise RuntimeError("always fails")
+
+        with patch.object(svc, "_call_llm_sync", side_effect=tracking_call):
+            result = await svc._call_and_parse("test prompt", NormalizationResult, "test_step")
+
+        assert result is None
+        assert call_count == 2

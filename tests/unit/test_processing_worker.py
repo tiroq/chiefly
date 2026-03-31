@@ -444,7 +444,12 @@ def _apply_patches(patches):
     applied["ClassificationService"] = patch(
         prefix + "ClassificationService", return_value=patches["ClassificationService"]
     )
-    applied["LLMService"] = patch(prefix + "LLMService", return_value=patches["LLMService"])
+    applied["LLMService"] = patch(prefix + "LLMService")
+    applied["get_effective_llm_config"] = patch(
+        prefix + "get_effective_llm_config",
+        new_callable=AsyncMock,
+        return_value=MagicMock(),
+    )
     applied["ProjectRoutingService"] = patch(
         prefix + "ProjectRoutingService", return_value=patches["ProjectRoutingService"]
     )

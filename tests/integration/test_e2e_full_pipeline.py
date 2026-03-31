@@ -280,13 +280,18 @@ class TestFullPipelineE2E:
             ),
             patch(
                 "apps.api.workers.processing_worker.LLMService",
-                return_value=mock_llm,
-            ),
+            ) as MockLLMService,
             patch(
                 "apps.api.workers.processing_worker.TelegramService",
                 return_value=mock_telegram,
             ),
+            patch(
+                "apps.api.workers.processing_worker.get_effective_llm_config",
+                new_callable=AsyncMock,
+                return_value=MagicMock(),
+            ),
         ):
+            MockLLMService.from_effective_config.return_value = mock_llm
             await _process_entry(
                 db_session,
                 claimed_entry.id,
