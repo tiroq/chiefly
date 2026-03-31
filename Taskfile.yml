@@ -113,11 +113,11 @@ tasks:
       - docker compose -f infra/docker/docker-compose.yml logs --tail=50 -f
 
   docker:rebuild:
-    desc: Rebuild API image and restart the service (keeps DB & data)
+    desc: Rebuild API and admin images and restart the services (keeps DB & data)
     aliases: [rebuild]
     cmds:
-      - docker compose -f infra/docker/docker-compose.yml build api migrate
-      - docker compose -f infra/docker/docker-compose.yml up -d --force-recreate api
+      - docker compose -f infra/docker/docker-compose.yml build api admin migrate
+      - docker compose -f infra/docker/docker-compose.yml up -d --force-recreate api admin
 
   docker:rebuild-scratch:
     desc: Full teardown, rebuild from scratch, and bring everything back up
@@ -145,5 +145,23 @@ tasks:
   docker:dev:rebuild:
     desc: Rebuild and restart Docker dev services with hot reload
     cmds:
-      - docker compose -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.dev.yml build api migrate
-      - docker compose -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.dev.yml up -d --force-recreate api
+      - docker compose -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.dev.yml build api admin migrate
+      - docker compose -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.dev.yml up -d --force-recreate api admin
+
+  admin:
+    desc: Start the admin panel on :8001 with hot reload
+    cmds:
+      - .venv/bin/uvicorn apps.admin.main:app --reload --reload-dir apps --reload-dir core --reload-dir db --host 127.0.0.1 --port 8001 --log-level info
+    dotenv: [".env"]
+
+  miniapp:build:
+    desc: Build the Mini App React SPA to apps/miniapp/dist/
+    dir: apps/miniapp
+    cmds:
+      - npm run build
+
+  miniapp:dev:
+    desc: Start the Mini App Vite dev server with HMR
+    dir: apps/miniapp
+    cmds:
+      - npm run dev
