@@ -50,5 +50,27 @@ services:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
+  admin:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile
+    ports:
+      - "127.0.0.1:${ADMIN_PORT:-8001}:8001"
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-chiefly}:${POSTGRES_PASSWORD:-chiefly}@db:5432/${POSTGRES_DB:-chiefly}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    env_file:
+      - ../../.env
+    volumes:
+      - ../../credentials:/app/credentials
+    command: ["uvicorn", "apps.admin.main:app", "--host", "0.0.0.0", "--port", "8001", "--log-level", "info"]
+    restart: unless-stopped
+
 volumes:
   postgres_data:

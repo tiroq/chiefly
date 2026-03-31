@@ -41,5 +41,33 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
+  admin:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile
+      args:
+        INSTALL_DEV: "true"
+        ENABLE_RELOAD: "true"
+    environment:
+      APP_ENV: development
+      LOG_LEVEL: ${LOG_LEVEL:-DEBUG}
+    volumes:
+      - ../../apps:/app/apps
+      - ../../core:/app/core
+      - ../../db:/app/db
+      - ../../credentials:/app/credentials
+    command: >
+      uvicorn apps.admin.main:app
+      --reload
+      --reload-dir apps
+      --reload-dir core
+      --reload-dir db
+      --host 0.0.0.0
+      --port 8001
+      --log-level debug
+      --access-log
+    ports:
+      - "127.0.0.1:${ADMIN_PORT:-8001}:8001"
+
 volumes:
   postgres_data:
