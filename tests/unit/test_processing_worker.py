@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -17,6 +17,7 @@ from core.domain.enums import (
     TaskRecordState,
     WorkflowStatus,
 )
+from core.domain.exceptions import RateLimitError
 
 
 def _make_source_task(**overrides):
@@ -822,3 +823,594 @@ def _multi_patch(patch_dict):
                 p.__exit__(None, None, None)
 
     return _ctx()
+
+
+# --- Rate limit handling tests ---
+
+
+@patch("apps.api.workers.processing_worker._process_entry")
+@patch("apps.api.workers.processing_worker.get_session_factory")
+@patch("apps.api.workers.processing_worker.get_settings")
+@pytest.mark.asyncio
+async def test_run_processing_requeues_on_rate_limit(
+    mock_settings, mock_factory, mock_process_entry
+):
+    from apps.api.workers.processing_worker import run_processing
+
+    settings = MagicMock()
+    mock_settings.return_value = settings
+
+    entry = _make_queue_entry()
+    requeue_mock = AsyncMock()
+
+    def make_session():
+        mock_session = MagicMock()
+        mock_session.commit = AsyncMock()
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        return ctx
+
+    mock_factory.return_value = MagicMock(side_effect=make_session)
+    mock_process_entry.side_effect = RateLimitError(provider="openai", retry_after_seconds=30.0)
+
+    with (
+        patch("apps.api.workers.processing_worker.ReviewSessionRepository") as mock_review_cls,
+        patch("apps.api.workers.processing_worker.ProcessingQueueRepository") as mock_queue_cls,
+        patch("apps.api.workers.processing_worker.TaskRecordRepository") as mock_record_cls,
+        patch("apps.api.workers.processing_worker.SystemEventRepo") as mock_event_repo_cls,
+        patch("apps.api.workers.processing_worker.SystemEvent"),
+    ):
+        review_repo = MagicMock()
+        review_repo.has_active_review = AsyncMock(return_value=False)
+        mock_review_cls.return_value = review_repo
+
+        queue_repo = MagicMock()
+        queue_repo.claim_next = AsyncMock(return_value=entry)
+        queue_repo.requeue_with_delay = requeue_mock
+        mock_queue_cls.return_value = queue_repo
+
+        record_repo = MagicMock()
+        record_repo.update_processing_status = AsyncMock()
+        mock_record_cls.return_value = record_repo
+
+        event_repo = MagicMock()
+        event_repo.create = AsyncMock()
+        mock_event_repo_cls.return_value = event_repo
+
+        await run_processing()
+
+        requeue_mock.assert_awaited_once()
+        requeue_args = requeue_mock.await_args
+        assert requeue_args is not None
+        assert requeue_args[0][0] == entry.id
+
+        record_repo.update_processing_status.assert_awaited_once_with(
+            entry.stable_id, WorkflowStatus.PENDING
+        )
+
+
+@patch("apps.api.workers.processing_worker._process_entry")
+@patch("apps.api.workers.processing_worker.get_session_factory")
+@patch("apps.api.workers.processing_worker.get_settings")
+@pytest.mark.asyncio
+async def test_run_processing_rate_limit_emits_system_event(
+    mock_settings, mock_factory, mock_process_entry
+):
+    from apps.api.workers.processing_worker import run_processing
+
+    settings = MagicMock()
+    mock_settings.return_value = settings
+
+    entry = _make_queue_entry()
+
+    def make_session():
+        mock_session = MagicMock()
+        mock_session.commit = AsyncMock()
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        return ctx
+
+    mock_factory.return_value = MagicMock(side_effect=make_session)
+    mock_process_entry.side_effect = RateLimitError(
+        provider="github_models", retry_after_seconds=30.0
+    )
+
+    with (
+        patch("apps.api.workers.processing_worker.ReviewSessionRepository") as mock_review_cls,
+        patch("apps.api.workers.processing_worker.ProcessingQueueRepository") as mock_queue_cls,
+        patch("apps.api.workers.processing_worker.TaskRecordRepository") as mock_record_cls,
+        patch("apps.api.workers.processing_worker.SystemEvent") as mock_event_cls,
+        patch("apps.api.workers.processing_worker.SystemEventRepo") as mock_event_repo_cls,
+    ):
+        review_repo = MagicMock()
+        review_repo.has_active_review = AsyncMock(return_value=False)
+        mock_review_cls.return_value = review_repo
+
+        queue_repo = MagicMock()
+        queue_repo.claim_next = AsyncMock(return_value=entry)
+        queue_repo.requeue_with_delay = AsyncMock()
+        mock_queue_cls.return_value = queue_repo
+
+        record_repo = MagicMock()
+        record_repo.update_processing_status = AsyncMock()
+        mock_record_cls.return_value = record_repo
+
+        event_repo = MagicMock()
+        event_repo.create = AsyncMock()
+        mock_event_repo_cls.return_value = event_repo
+
+        await run_processing()
+
+        mock_event_cls.assert_called_once()
+        event_kwargs = mock_event_cls.call_args
+        assert event_kwargs.kwargs.get("event_type") == "llm_rate_limited"
+        assert event_kwargs.kwargs.get("severity") == "warning"
+
+        event_repo.create.assert_awaited_once()
+
+
+@patch("apps.api.workers.processing_worker._process_entry")
+@patch("apps.api.workers.processing_worker.get_session_factory")
+@patch("apps.api.workers.processing_worker.get_settings")
+@pytest.mark.asyncio
+async def test_run_processing_rate_limit_resets_to_pending_not_failed(
+    mock_settings, mock_factory, mock_process_entry
+):
+    from apps.api.workers.processing_worker import run_processing
+
+    settings = MagicMock()
+    mock_settings.return_value = settings
+
+    entry = _make_queue_entry()
+
+    def make_session():
+        mock_session = MagicMock()
+        mock_session.commit = AsyncMock()
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        return ctx
+
+    mock_factory.return_value = MagicMock(side_effect=make_session)
+    mock_process_entry.side_effect = RateLimitError(provider="openai", retry_after_seconds=30.0)
+
+    with (
+        patch("apps.api.workers.processing_worker.ReviewSessionRepository") as mock_review_cls,
+        patch("apps.api.workers.processing_worker.ProcessingQueueRepository") as mock_queue_cls,
+        patch("apps.api.workers.processing_worker.TaskRecordRepository") as mock_record_cls,
+        patch("apps.api.workers.processing_worker.SystemEvent"),
+        patch("apps.api.workers.processing_worker.SystemEventRepo") as mock_event_repo_cls,
+    ):
+        review_repo = MagicMock()
+        review_repo.has_active_review = AsyncMock(return_value=False)
+        mock_review_cls.return_value = review_repo
+
+        queue_repo = MagicMock()
+        queue_repo.claim_next = AsyncMock(return_value=entry)
+        queue_repo.requeue_with_delay = AsyncMock()
+        mock_queue_cls.return_value = queue_repo
+
+        record_repo = MagicMock()
+        record_repo.update_processing_status = AsyncMock()
+        mock_record_cls.return_value = record_repo
+
+        event_repo = MagicMock()
+        event_repo.create = AsyncMock()
+        mock_event_repo_cls.return_value = event_repo
+
+        await run_processing()
+
+        record_repo.update_processing_status.assert_awaited_once_with(
+            entry.stable_id, WorkflowStatus.PENDING
+        )
+        for call in record_repo.update_processing_status.await_args_list:
+            assert call[0][1] != WorkflowStatus.FAILED
+
+
+@patch("apps.api.workers.processing_worker._process_entry")
+@patch("apps.api.workers.processing_worker.get_session_factory")
+@patch("apps.api.workers.processing_worker.get_settings")
+@pytest.mark.asyncio
+async def test_run_processing_rate_limit_commits_session(
+    mock_settings, mock_factory, mock_process_entry
+):
+    from apps.api.workers.processing_worker import run_processing
+
+    settings = MagicMock()
+    mock_settings.return_value = settings
+
+    entry = _make_queue_entry()
+    commit_mock = AsyncMock()
+
+    def make_session():
+        mock_session = MagicMock()
+        mock_session.commit = commit_mock
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        return ctx
+
+    mock_factory.return_value = MagicMock(side_effect=make_session)
+    mock_process_entry.side_effect = RateLimitError(provider="openai", retry_after_seconds=30.0)
+
+    with (
+        patch("apps.api.workers.processing_worker.ReviewSessionRepository") as mock_review_cls,
+        patch("apps.api.workers.processing_worker.ProcessingQueueRepository") as mock_queue_cls,
+        patch("apps.api.workers.processing_worker.TaskRecordRepository") as mock_record_cls,
+        patch("apps.api.workers.processing_worker.SystemEvent"),
+        patch("apps.api.workers.processing_worker.SystemEventRepo") as mock_event_repo_cls,
+    ):
+        review_repo = MagicMock()
+        review_repo.has_active_review = AsyncMock(return_value=False)
+        mock_review_cls.return_value = review_repo
+
+        queue_repo = MagicMock()
+        queue_repo.claim_next = AsyncMock(return_value=entry)
+        queue_repo.requeue_with_delay = AsyncMock()
+        mock_queue_cls.return_value = queue_repo
+
+        record_repo = MagicMock()
+        record_repo.update_processing_status = AsyncMock()
+        mock_record_cls.return_value = record_repo
+
+        event_repo = MagicMock()
+        event_repo.create = AsyncMock()
+        mock_event_repo_cls.return_value = event_repo
+
+        await run_processing()
+
+        assert commit_mock.await_count >= 2
+
+
+@patch("apps.api.workers.processing_worker._process_entry")
+@patch("apps.api.workers.processing_worker.get_session_factory")
+@patch("apps.api.workers.processing_worker.get_settings")
+@pytest.mark.asyncio
+async def test_run_processing_rate_limit_passes_not_before_to_requeue(
+    mock_settings, mock_factory, mock_process_entry
+):
+    from apps.api.workers.processing_worker import run_processing
+
+    settings = MagicMock()
+    mock_settings.return_value = settings
+
+    entry = _make_queue_entry()
+
+    def make_session():
+        mock_session = MagicMock()
+        mock_session.commit = AsyncMock()
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        return ctx
+
+    mock_factory.return_value = MagicMock(side_effect=make_session)
+    mock_process_entry.side_effect = RateLimitError(provider="openai", retry_after_seconds=30.0)
+
+    with (
+        patch("apps.api.workers.processing_worker.ReviewSessionRepository") as mock_review_cls,
+        patch("apps.api.workers.processing_worker.ProcessingQueueRepository") as mock_queue_cls,
+        patch("apps.api.workers.processing_worker.TaskRecordRepository") as mock_record_cls,
+        patch("apps.api.workers.processing_worker.SystemEvent"),
+        patch("apps.api.workers.processing_worker.SystemEventRepo") as mock_event_repo_cls,
+    ):
+        review_repo = MagicMock()
+        review_repo.has_active_review = AsyncMock(return_value=False)
+        mock_review_cls.return_value = review_repo
+
+        queue_repo = MagicMock()
+        queue_repo.claim_next = AsyncMock(return_value=entry)
+        queue_repo.requeue_with_delay = AsyncMock()
+        mock_queue_cls.return_value = queue_repo
+
+        record_repo = MagicMock()
+        record_repo.update_processing_status = AsyncMock()
+        mock_record_cls.return_value = record_repo
+
+        event_repo = MagicMock()
+        event_repo.create = AsyncMock()
+        mock_event_repo_cls.return_value = event_repo
+
+        before = datetime.now(tz=timezone.utc)
+        await run_processing()
+
+        queue_repo.requeue_with_delay.assert_awaited_once()
+        call_kwargs = queue_repo.requeue_with_delay.call_args
+        assert call_kwargs.kwargs.get("not_before") is not None
+        not_before_val = call_kwargs.kwargs["not_before"]
+        assert not_before_val > before
+        expected_not_before = before + timedelta(seconds=30.0)
+        assert abs((not_before_val - expected_not_before).total_seconds()) < 2.0
+
+
+@patch("apps.api.workers.processing_worker._process_entry")
+@patch("apps.api.workers.processing_worker.get_session_factory")
+@patch("apps.api.workers.processing_worker.get_settings")
+@pytest.mark.asyncio
+async def test_run_processing_rate_limit_resets_processing_status_to_pending(
+    mock_settings, mock_factory, mock_process_entry
+):
+    from apps.api.workers.processing_worker import run_processing
+
+    settings = MagicMock()
+    mock_settings.return_value = settings
+
+    stable_id = uuid.uuid4()
+    entry = _make_queue_entry(stable_id=stable_id)
+
+    def make_session():
+        mock_session = MagicMock()
+        mock_session.commit = AsyncMock()
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        return ctx
+
+    mock_factory.return_value = MagicMock(side_effect=make_session)
+    mock_process_entry.side_effect = RateLimitError(provider="openai", retry_after_seconds=30.0)
+
+    with (
+        patch("apps.api.workers.processing_worker.ReviewSessionRepository") as mock_review_cls,
+        patch("apps.api.workers.processing_worker.ProcessingQueueRepository") as mock_queue_cls,
+        patch("apps.api.workers.processing_worker.TaskRecordRepository") as mock_record_cls,
+        patch("apps.api.workers.processing_worker.SystemEvent"),
+        patch("apps.api.workers.processing_worker.SystemEventRepo") as mock_event_repo_cls,
+    ):
+        review_repo = MagicMock()
+        review_repo.has_active_review = AsyncMock(return_value=False)
+        mock_review_cls.return_value = review_repo
+
+        queue_repo = MagicMock()
+        queue_repo.claim_next = AsyncMock(return_value=entry)
+        queue_repo.requeue_with_delay = AsyncMock()
+        mock_queue_cls.return_value = queue_repo
+
+        record_repo = MagicMock()
+        record_repo.update_processing_status = AsyncMock()
+        mock_record_cls.return_value = record_repo
+
+        event_repo = MagicMock()
+        event_repo.create = AsyncMock()
+        mock_event_repo_cls.return_value = event_repo
+
+        await run_processing()
+
+        record_repo.update_processing_status.assert_awaited_once_with(
+            stable_id, WorkflowStatus.PENDING
+        )
+
+
+@patch("apps.api.workers.processing_worker._process_entry")
+@patch("apps.api.workers.processing_worker.get_session_factory")
+@patch("apps.api.workers.processing_worker.get_settings")
+@pytest.mark.asyncio
+async def test_run_processing_rate_limit_no_stable_id_skips_status_reset(
+    mock_settings, mock_factory, mock_process_entry
+):
+    from apps.api.workers.processing_worker import run_processing
+
+    settings = MagicMock()
+    mock_settings.return_value = settings
+
+    entry = _make_queue_entry(stable_id=None)
+
+    def make_session():
+        mock_session = MagicMock()
+        mock_session.commit = AsyncMock()
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        return ctx
+
+    mock_factory.return_value = MagicMock(side_effect=make_session)
+    mock_process_entry.side_effect = RateLimitError(provider="openai", retry_after_seconds=30.0)
+
+    with (
+        patch("apps.api.workers.processing_worker.ReviewSessionRepository") as mock_review_cls,
+        patch("apps.api.workers.processing_worker.ProcessingQueueRepository") as mock_queue_cls,
+        patch("apps.api.workers.processing_worker.TaskRecordRepository") as mock_record_cls,
+        patch("apps.api.workers.processing_worker.SystemEvent"),
+        patch("apps.api.workers.processing_worker.SystemEventRepo") as mock_event_repo_cls,
+    ):
+        review_repo = MagicMock()
+        review_repo.has_active_review = AsyncMock(return_value=False)
+        mock_review_cls.return_value = review_repo
+
+        queue_repo = MagicMock()
+        queue_repo.claim_next = AsyncMock(return_value=entry)
+        queue_repo.requeue_with_delay = AsyncMock()
+        mock_queue_cls.return_value = queue_repo
+
+        record_repo = MagicMock()
+        record_repo.update_processing_status = AsyncMock()
+        mock_record_cls.return_value = record_repo
+
+        event_repo = MagicMock()
+        event_repo.create = AsyncMock()
+        mock_event_repo_cls.return_value = event_repo
+
+        await run_processing()
+
+        record_repo.update_processing_status.assert_not_awaited()
+
+
+@patch("apps.api.workers.processing_worker._process_entry")
+@patch("apps.api.workers.processing_worker.get_session_factory")
+@patch("apps.api.workers.processing_worker.get_settings")
+@pytest.mark.asyncio
+async def test_run_processing_rate_limit_does_not_consume_retries(
+    mock_settings, mock_factory, mock_process_entry
+):
+    from apps.api.workers.processing_worker import run_processing
+
+    settings = MagicMock()
+    mock_settings.return_value = settings
+
+    stable_id = uuid.uuid4()
+    entry = _make_queue_entry(stable_id=stable_id, retry_count=2, max_retries=3)
+
+    def make_session():
+        mock_session = MagicMock()
+        mock_session.commit = AsyncMock()
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        return ctx
+
+    mock_factory.return_value = MagicMock(side_effect=make_session)
+    mock_process_entry.side_effect = RateLimitError(provider="openai", retry_after_seconds=30.0)
+
+    with (
+        patch("apps.api.workers.processing_worker.ReviewSessionRepository") as mock_review_cls,
+        patch("apps.api.workers.processing_worker.ProcessingQueueRepository") as mock_queue_cls,
+        patch("apps.api.workers.processing_worker.TaskRecordRepository") as mock_record_cls,
+        patch("apps.api.workers.processing_worker.SystemEvent"),
+        patch("apps.api.workers.processing_worker.SystemEventRepo") as mock_event_repo_cls,
+    ):
+        review_repo = MagicMock()
+        review_repo.has_active_review = AsyncMock(return_value=False)
+        mock_review_cls.return_value = review_repo
+
+        queue_repo = MagicMock()
+        queue_repo.claim_next = AsyncMock(return_value=entry)
+        queue_repo.requeue_with_delay = AsyncMock()
+        queue_repo.fail = AsyncMock()
+        mock_queue_cls.return_value = queue_repo
+
+        record_repo = MagicMock()
+        record_repo.update_processing_status = AsyncMock()
+        mock_record_cls.return_value = record_repo
+
+        event_repo = MagicMock()
+        event_repo.create = AsyncMock()
+        mock_event_repo_cls.return_value = event_repo
+
+        await run_processing()
+
+        queue_repo.requeue_with_delay.assert_awaited_once()
+        queue_repo.fail.assert_not_awaited()
+        record_repo.update_processing_status.assert_awaited_once_with(
+            stable_id, WorkflowStatus.PENDING
+        )
+
+
+@patch("apps.api.workers.processing_worker._process_entry")
+@patch("apps.api.workers.processing_worker.get_session_factory")
+@patch("apps.api.workers.processing_worker.get_settings")
+@pytest.mark.asyncio
+async def test_run_processing_rate_limit_queue_unlocked_even_if_side_effects_fail(
+    mock_settings, mock_factory, mock_process_entry
+):
+    """requeue_with_delay() commits in its own transaction; if the side-effect
+    session (TaskRecord update / SystemEvent) raises, the queue entry is
+    still safely unlocked (PENDING), not stranded as LOCKED."""
+    from apps.api.workers.processing_worker import run_processing
+
+    settings = MagicMock()
+    mock_settings.return_value = settings
+
+    stable_id = uuid.uuid4()
+    entry = _make_queue_entry(stable_id=stable_id)
+    requeue_mock = AsyncMock()
+
+    def make_session():
+        mock_session = MagicMock()
+        mock_session.commit = AsyncMock()
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        return ctx
+
+    mock_factory.return_value = MagicMock(side_effect=make_session)
+    mock_process_entry.side_effect = RateLimitError(provider="openai", retry_after_seconds=30.0)
+
+    with (
+        patch("apps.api.workers.processing_worker.ReviewSessionRepository") as mock_review_cls,
+        patch("apps.api.workers.processing_worker.ProcessingQueueRepository") as mock_queue_cls,
+        patch("apps.api.workers.processing_worker.TaskRecordRepository") as mock_record_cls,
+        patch("apps.api.workers.processing_worker.SystemEvent"),
+        patch("apps.api.workers.processing_worker.SystemEventRepo") as mock_event_repo_cls,
+    ):
+        review_repo = MagicMock()
+        review_repo.has_active_review = AsyncMock(return_value=False)
+        mock_review_cls.return_value = review_repo
+
+        queue_repo = MagicMock()
+        queue_repo.claim_next = AsyncMock(return_value=entry)
+        queue_repo.requeue_with_delay = requeue_mock
+        mock_queue_cls.return_value = queue_repo
+
+        record_repo = MagicMock()
+        record_repo.update_processing_status = AsyncMock(
+            side_effect=RuntimeError("DB connection lost")
+        )
+        mock_record_cls.return_value = record_repo
+
+        event_repo = MagicMock()
+        event_repo.create = AsyncMock()
+        mock_event_repo_cls.return_value = event_repo
+
+        await run_processing()
+
+        requeue_mock.assert_awaited_once()
+
+        record_repo.update_processing_status.assert_awaited_once()
+
+
+@patch("apps.api.workers.processing_worker._process_entry")
+@patch("apps.api.workers.processing_worker.get_session_factory")
+@patch("apps.api.workers.processing_worker.get_settings")
+@pytest.mark.asyncio
+async def test_run_processing_rate_limit_event_failure_does_not_lose_queue_unlock(
+    mock_settings, mock_factory, mock_process_entry
+):
+    """If SystemEventRepo.create raises, the queue entry must already be
+    committed as PENDING from the first transaction."""
+    from apps.api.workers.processing_worker import run_processing
+
+    settings = MagicMock()
+    mock_settings.return_value = settings
+
+    entry = _make_queue_entry(stable_id=None)
+    requeue_mock = AsyncMock()
+
+    def make_session():
+        mock_session = MagicMock()
+        mock_session.commit = AsyncMock()
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        return ctx
+
+    mock_factory.return_value = MagicMock(side_effect=make_session)
+    mock_process_entry.side_effect = RateLimitError(provider="openai", retry_after_seconds=30.0)
+
+    with (
+        patch("apps.api.workers.processing_worker.ReviewSessionRepository") as mock_review_cls,
+        patch("apps.api.workers.processing_worker.ProcessingQueueRepository") as mock_queue_cls,
+        patch("apps.api.workers.processing_worker.TaskRecordRepository") as mock_record_cls,
+        patch("apps.api.workers.processing_worker.SystemEvent"),
+        patch("apps.api.workers.processing_worker.SystemEventRepo") as mock_event_repo_cls,
+    ):
+        review_repo = MagicMock()
+        review_repo.has_active_review = AsyncMock(return_value=False)
+        mock_review_cls.return_value = review_repo
+
+        queue_repo = MagicMock()
+        queue_repo.claim_next = AsyncMock(return_value=entry)
+        queue_repo.requeue_with_delay = requeue_mock
+        mock_queue_cls.return_value = queue_repo
+
+        record_repo = MagicMock()
+        record_repo.update_processing_status = AsyncMock()
+        mock_record_cls.return_value = record_repo
+
+        event_repo = MagicMock()
+        event_repo.create = AsyncMock(side_effect=RuntimeError("Event table locked"))
+        mock_event_repo_cls.return_value = event_repo
+
+        await run_processing()
+
+        requeue_mock.assert_awaited_once()

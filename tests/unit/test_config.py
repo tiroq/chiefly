@@ -57,3 +57,45 @@ class TestSyncIntervalBackwardCompat:
             _env_file=None,
         )
         assert s.default_tasklist_id == "legacy-id"
+
+
+class TestRateLimitConfigValidation:
+    def test_zero_capacity_rejected(self):
+        import pytest
+
+        with pytest.raises(Exception, match="rate_limit_capacity must be positive"):
+            Settings(database_url="sqlite:///:memory:", rate_limit_capacity=0, _env_file=None)
+
+    def test_negative_capacity_rejected(self):
+        import pytest
+
+        with pytest.raises(Exception, match="rate_limit_capacity must be positive"):
+            Settings(database_url="sqlite:///:memory:", rate_limit_capacity=-5, _env_file=None)
+
+    def test_zero_refill_amount_rejected(self):
+        import pytest
+
+        with pytest.raises(Exception, match="rate_limit_refill_amount must be positive"):
+            Settings(database_url="sqlite:///:memory:", rate_limit_refill_amount=0, _env_file=None)
+
+    def test_negative_refill_interval_rejected(self):
+        import pytest
+
+        with pytest.raises(Exception, match="rate_limit_refill_interval_seconds must be positive"):
+            Settings(
+                database_url="sqlite:///:memory:",
+                rate_limit_refill_interval_seconds=-1,
+                _env_file=None,
+            )
+
+    def test_valid_rate_limit_config_accepted(self):
+        s = Settings(
+            database_url="sqlite:///:memory:",
+            rate_limit_capacity=5,
+            rate_limit_refill_amount=2,
+            rate_limit_refill_interval_seconds=15,
+            _env_file=None,
+        )
+        assert s.rate_limit_capacity == 5
+        assert s.rate_limit_refill_amount == 2
+        assert s.rate_limit_refill_interval_seconds == 15

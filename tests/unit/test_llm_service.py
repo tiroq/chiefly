@@ -8,7 +8,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from apps.api.services.llm_service import LLMService, _fallback_classification
+from apps.api.services.rate_limiter import ProviderRateLimiter, RateLimitDecision
 from core.domain.enums import ConfidenceBand, TaskKind
+from core.domain.exceptions import RateLimitError
 from core.schemas.llm import TaskClassificationResult
 
 
@@ -475,3 +477,230 @@ class TestFallbackBehavior:
 
         assert result is None
         assert call_count == 2
+
+
+class TestRateLimiterIntegration:
+    def _make_service(
+        self, provider: str = "openai", rate_limiter: ProviderRateLimiter | None = None
+    ) -> LLMService:
+        return LLMService(
+            provider=provider,
+            model="gpt-4o",
+            api_key="test-key",
+            rate_limiter=rate_limiter,
+        )
+
+    def test_call_llm_sync_checks_rate_limiter_allowed(self):
+        limiter = ProviderRateLimiter(capacity=10, refill_amount=1, refill_interval=30)
+        svc = self._make_service(rate_limiter=limiter)
+
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = '{"result": "ok"}'
+        mock_response.usage = MagicMock(prompt_tokens=10, completion_tokens=5, total_tokens=15)
+
+        with patch("openai.OpenAI") as mock_openai:
+            mock_client = MagicMock()
+            mock_client.chat.completions.create.return_value = mock_response
+            mock_openai.return_value = mock_client
+
+            result = svc._call_llm_sync("test prompt")
+
+            mock_client.chat.completions.create.assert_called_once()
+            assert '{"result": "ok"}' == result
+
+    def test_call_llm_sync_rate_limited_raises(self):
+        limiter = ProviderRateLimiter(capacity=1, refill_amount=1, refill_interval=30)
+        svc = self._make_service(rate_limiter=limiter)
+
+        with patch("openai.OpenAI"):
+            svc._call_llm_sync("first call — consumes the token")
+
+        with patch("openai.OpenAI") as mock_openai:
+            mock_client = MagicMock()
+            mock_openai.return_value = mock_client
+
+            with pytest.raises(RateLimitError) as exc_info:
+                svc._call_llm_sync("second call — should be denied")
+
+            mock_client.chat.completions.create.assert_not_called()
+            assert exc_info.value.provider == "openai"
+            assert exc_info.value.retry_after_seconds > 0
+
+    def test_call_llm_sync_no_rate_limiter_proceeds(self):
+        svc = self._make_service(rate_limiter=None)
+
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = '{"ok": true}'
+        mock_response.usage = MagicMock(prompt_tokens=10, completion_tokens=5, total_tokens=15)
+
+        with patch("openai.OpenAI") as mock_openai:
+            mock_client = MagicMock()
+            mock_client.chat.completions.create.return_value = mock_response
+            mock_openai.return_value = mock_client
+
+            result = svc._call_llm_sync("test prompt")
+            mock_client.chat.completions.create.assert_called_once()
+
+    def test_call_llm_sync_ollama_bypasses_rate_limiter(self):
+        limiter = ProviderRateLimiter(capacity=1, refill_amount=1, refill_interval=30)
+        svc = self._make_service(provider="ollama", rate_limiter=limiter)
+
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = '{"ok": true}'
+        mock_response.usage = MagicMock(prompt_tokens=10, completion_tokens=5, total_tokens=15)
+
+        with patch("openai.OpenAI") as mock_openai:
+            mock_client = MagicMock()
+            mock_client.chat.completions.create.return_value = mock_response
+            mock_openai.return_value = mock_client
+
+            for _ in range(5):
+                svc._call_llm_sync("test prompt")
+
+            assert mock_client.chat.completions.create.call_count == 5
+
+    def test_rate_limit_error_has_correct_fields(self):
+        limiter = ProviderRateLimiter(capacity=1, refill_amount=1, refill_interval=30)
+        svc = self._make_service(provider="github_models", rate_limiter=limiter)
+
+        with patch("openai.OpenAI"):
+            svc._call_llm_sync("consume token")
+
+        with patch("openai.OpenAI"):
+            with pytest.raises(RateLimitError) as exc_info:
+                svc._call_llm_sync("denied")
+
+            err = exc_info.value
+            assert err.provider == "github_models"
+            assert err.retry_after_seconds > 0
+            assert "github_models" in str(err)
+
+    def test_rate_limiter_called_with_correct_provider(self):
+        limiter = MagicMock(spec=ProviderRateLimiter)
+        limiter.check.return_value = RateLimitDecision(
+            allowed=True, tokens_remaining=9, retry_after_seconds=0.0
+        )
+        svc = self._make_service(provider="github_models", rate_limiter=limiter)
+
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = '{"ok": true}'
+        mock_response.usage = MagicMock(prompt_tokens=10, completion_tokens=5, total_tokens=15)
+
+        with patch("openai.OpenAI") as mock_openai:
+            mock_client = MagicMock()
+            mock_client.chat.completions.create.return_value = mock_response
+            mock_openai.return_value = mock_client
+
+            svc._call_llm_sync("test prompt")
+
+        limiter.check.assert_called_once_with("github_models")
+
+
+class TestRateLimitErrorPropagation:
+    def _make_service(self) -> LLMService:
+        return LLMService(
+            provider="openai",
+            model="gpt-4o",
+            api_key="test-key",
+        )
+
+    @pytest.mark.asyncio
+    async def test_try_call_and_parse_propagates_rate_limit_error(self):
+        svc = self._make_service()
+        with patch.object(
+            svc,
+            "_call_llm_sync",
+            side_effect=RateLimitError(provider="openai", retry_after_seconds=30.0),
+        ):
+            with pytest.raises(RateLimitError) as exc_info:
+                from core.schemas.llm import NormalizationResult
+
+                await svc._try_call_and_parse("prompt", NormalizationResult, "test_step", retries=2)
+            assert exc_info.value.provider == "openai"
+
+    @pytest.mark.asyncio
+    async def test_call_and_parse_propagates_rate_limit_error(self):
+        svc = self._make_service()
+        with patch.object(
+            svc,
+            "_call_llm_sync",
+            side_effect=RateLimitError(provider="openai", retry_after_seconds=30.0),
+        ):
+            with pytest.raises(RateLimitError):
+                from core.schemas.llm import NormalizationResult
+
+                await svc._call_and_parse("prompt", NormalizationResult, "test_step")
+
+    @pytest.mark.asyncio
+    async def test_classify_task_propagates_rate_limit_error(self):
+        svc = self._make_service()
+        with patch.object(
+            svc,
+            "_call_llm_sync",
+            side_effect=RateLimitError(provider="openai", retry_after_seconds=30.0),
+        ):
+            with pytest.raises(RateLimitError):
+                await svc.classify_task("buy groceries", "Available projects:\n- Personal")
+
+    @pytest.mark.asyncio
+    async def test_run_pipeline_propagates_rate_limit_error(self):
+        svc = self._make_service()
+        with patch.object(
+            svc,
+            "_call_llm_sync",
+            side_effect=RateLimitError(provider="openai", retry_after_seconds=30.0),
+        ):
+            with pytest.raises(RateLimitError):
+                await svc.run_pipeline(
+                    raw_text="buy groceries",
+                    project_context="Available projects:\n- Personal",
+                )
+
+    @pytest.mark.asyncio
+    async def test_generate_project_description_propagates_rate_limit_error(self):
+        svc = self._make_service()
+        with patch.object(
+            svc,
+            "_call_llm_sync",
+            side_effect=RateLimitError(provider="openai", retry_after_seconds=30.0),
+        ):
+            with pytest.raises(RateLimitError):
+                await svc.generate_project_description("TestProject", ["task1"])
+
+    @pytest.mark.asyncio
+    async def test_rewrite_title_propagates_rate_limit_error(self):
+        svc = self._make_service()
+        with patch.object(
+            svc,
+            "_call_llm_sync",
+            side_effect=RateLimitError(provider="openai", retry_after_seconds=30.0),
+        ):
+            with pytest.raises(RateLimitError):
+                await svc.rewrite_title("some raw text")
+
+    @pytest.mark.asyncio
+    async def test_generate_draft_message_propagates_rate_limit_error(self):
+        svc = self._make_service()
+        with patch.object(
+            svc,
+            "_call_llm_sync",
+            side_effect=RateLimitError(provider="openai", retry_after_seconds=30.0),
+        ):
+            with pytest.raises(RateLimitError):
+                await svc.generate_draft_message("Task title", "task")
+
+    @pytest.mark.asyncio
+    async def test_non_rate_limit_exception_still_handled_gracefully(self):
+        svc = self._make_service()
+        with patch.object(
+            svc,
+            "_call_llm_sync",
+            side_effect=ValueError("connection error"),
+        ):
+            result = await svc.classify_task("buy groceries", "Available projects:\n- Personal")
+            assert result.kind == TaskKind.TASK
+            assert result.normalized_title == "buy groceries"

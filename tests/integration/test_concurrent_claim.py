@@ -175,3 +175,182 @@ class TestProcessingQueueConcurrentClaim:
         assert newer_db is not None
         assert newer_db.processing_status == ProcessingStatus.LOCKED
         assert newer_db.locked_by == "worker-latest"
+
+    @pytest.mark.asyncio
+    async def test_claim_next_skips_entries_with_future_not_before(
+        self, db_session: AsyncSession
+    ) -> None:
+        source_task = await _create_source_task(db_session, google_task_id="g-not-before")
+
+        queue_repo = ProcessingQueueRepository(db_session)
+        entry = await queue_repo.enqueue(source_task.id, ProcessingReason.NEW_TASK)
+
+        entry.not_before = datetime.now(tz=timezone.utc) + timedelta(minutes=5)
+        db_session.add(entry)
+        await db_session.commit()
+
+        claimed = await queue_repo.claim_next(locked_by="worker-nb")
+        assert claimed is None
+
+        entry.not_before = datetime.now(tz=timezone.utc) - timedelta(seconds=1)
+        db_session.add(entry)
+        await db_session.commit()
+
+        claimed = await queue_repo.claim_next(locked_by="worker-nb")
+        assert claimed is not None
+        assert claimed.id == entry.id
+
+    @pytest.mark.asyncio
+    async def test_claim_next_allows_null_not_before(self, db_session: AsyncSession) -> None:
+        source_task = await _create_source_task(db_session, google_task_id="g-null-nb")
+
+        queue_repo = ProcessingQueueRepository(db_session)
+        entry = await queue_repo.enqueue(source_task.id, ProcessingReason.NEW_TASK)
+        await db_session.commit()
+
+        assert entry.not_before is None
+        claimed = await queue_repo.claim_next(locked_by="worker-null-nb")
+        assert claimed is not None
+        assert claimed.id == entry.id
+
+
+class TestStaleLockRecovery:
+    @pytest.mark.asyncio
+    async def test_claim_next_reclaims_stale_locked_entry(self, db_session: AsyncSession) -> None:
+        from db.repositories.processing_queue_repo import STALE_LOCK_TIMEOUT_SECONDS
+
+        source_task = await _create_source_task(db_session, google_task_id="g-stale-lock")
+
+        queue_repo = ProcessingQueueRepository(db_session)
+        entry = await queue_repo.enqueue(source_task.id, ProcessingReason.NEW_TASK)
+
+        stale_time = datetime.now(tz=timezone.utc) - timedelta(
+            seconds=STALE_LOCK_TIMEOUT_SECONDS + 60
+        )
+        entry.processing_status = ProcessingStatus.LOCKED
+        entry.locked_at = stale_time
+        entry.locked_by = "dead-worker"
+        db_session.add(entry)
+        await db_session.commit()
+
+        claimed = await queue_repo.claim_next(locked_by="recovery-worker")
+        assert claimed is not None
+        assert claimed.id == entry.id
+        assert claimed.locked_by == "recovery-worker"
+        assert claimed.processing_status == ProcessingStatus.LOCKED
+
+    @pytest.mark.asyncio
+    async def test_claim_next_does_not_reclaim_fresh_locked_entry(
+        self, db_session: AsyncSession
+    ) -> None:
+        source_task = await _create_source_task(db_session, google_task_id="g-fresh-lock")
+
+        queue_repo = ProcessingQueueRepository(db_session)
+        entry = await queue_repo.enqueue(source_task.id, ProcessingReason.NEW_TASK)
+
+        entry.processing_status = ProcessingStatus.LOCKED
+        entry.locked_at = datetime.now(tz=timezone.utc) - timedelta(seconds=10)
+        entry.locked_by = "active-worker"
+        db_session.add(entry)
+        await db_session.commit()
+
+        claimed = await queue_repo.claim_next(locked_by="recovery-worker")
+        assert claimed is None
+
+    @pytest.mark.asyncio
+    async def test_claim_next_reclaims_stale_processing_entry(
+        self, db_session: AsyncSession
+    ) -> None:
+        from db.repositories.processing_queue_repo import STALE_LOCK_TIMEOUT_SECONDS
+
+        source_task = await _create_source_task(db_session, google_task_id="g-stale-proc")
+
+        queue_repo = ProcessingQueueRepository(db_session)
+        entry = await queue_repo.enqueue(source_task.id, ProcessingReason.NEW_TASK)
+
+        stale_time = datetime.now(tz=timezone.utc) - timedelta(
+            seconds=STALE_LOCK_TIMEOUT_SECONDS + 60
+        )
+        entry.processing_status = ProcessingStatus.PROCESSING
+        entry.locked_at = stale_time
+        entry.locked_by = "dead-worker"
+        db_session.add(entry)
+        await db_session.commit()
+
+        claimed = await queue_repo.claim_next(locked_by="recovery-worker")
+        assert claimed is not None
+        assert claimed.id == entry.id
+        assert claimed.locked_by == "recovery-worker"
+        assert claimed.processing_status == ProcessingStatus.LOCKED
+
+    @pytest.mark.asyncio
+    async def test_claim_next_does_not_reclaim_fresh_processing_entry(
+        self, db_session: AsyncSession
+    ) -> None:
+        source_task = await _create_source_task(db_session, google_task_id="g-fresh-proc")
+
+        queue_repo = ProcessingQueueRepository(db_session)
+        entry = await queue_repo.enqueue(source_task.id, ProcessingReason.NEW_TASK)
+
+        entry.processing_status = ProcessingStatus.PROCESSING
+        entry.locked_at = datetime.now(tz=timezone.utc) - timedelta(seconds=10)
+        entry.locked_by = "active-worker"
+        db_session.add(entry)
+        await db_session.commit()
+
+        claimed = await queue_repo.claim_next(locked_by="recovery-worker")
+        assert claimed is None
+
+
+class TestRequeueWithDelay:
+    @pytest.mark.asyncio
+    async def test_requeue_with_delay_resets_to_pending(self, db_session: AsyncSession) -> None:
+        source_task = await _create_source_task(db_session, google_task_id="g-requeue-1")
+
+        queue_repo = ProcessingQueueRepository(db_session)
+        entry = await queue_repo.enqueue(source_task.id, ProcessingReason.NEW_TASK)
+
+        entry.processing_status = ProcessingStatus.LOCKED
+        entry.locked_at = datetime.now(tz=timezone.utc)
+        entry.locked_by = "test-worker"
+        entry.retry_count = 2
+        db_session.add(entry)
+        await db_session.commit()
+
+        original_retry_count = entry.retry_count
+        not_before = datetime.now(tz=timezone.utc) + timedelta(seconds=30)
+
+        await queue_repo.requeue_with_delay(entry.id, "Rate limited", not_before=not_before)
+        await db_session.commit()
+
+        updated = await queue_repo.get_by_id(entry.id)
+        assert updated is not None
+        assert updated.processing_status == ProcessingStatus.PENDING
+        assert updated.retry_count == original_retry_count
+        assert updated.locked_at is None
+        assert updated.locked_by is None
+        assert updated.not_before is not None
+        assert updated.not_before.replace(tzinfo=None) == not_before.replace(tzinfo=None)
+        assert updated.error_message == "Rate limited"
+
+    @pytest.mark.asyncio
+    async def test_requeue_with_delay_entry_not_claimable_before_not_before(
+        self, db_session: AsyncSession
+    ) -> None:
+        source_task = await _create_source_task(db_session, google_task_id="g-requeue-2")
+
+        queue_repo = ProcessingQueueRepository(db_session)
+        entry = await queue_repo.enqueue(source_task.id, ProcessingReason.NEW_TASK)
+
+        entry.processing_status = ProcessingStatus.LOCKED
+        entry.locked_at = datetime.now(tz=timezone.utc)
+        entry.locked_by = "test-worker"
+        db_session.add(entry)
+        await db_session.commit()
+
+        not_before = datetime.now(tz=timezone.utc) + timedelta(minutes=5)
+        await queue_repo.requeue_with_delay(entry.id, "Rate limited", not_before=not_before)
+        await db_session.commit()
+
+        claimed = await queue_repo.claim_next(locked_by="eager-worker")
+        assert claimed is None

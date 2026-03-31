@@ -136,7 +136,7 @@ async def test_process_entry_telegram_send_failure_is_graceful():
         {
             **_apply_patches(p),
             "SystemEventRepo": patch(
-                "db.repositories.system_event_repo.SystemEventRepo",
+                "apps.api.workers.processing_worker.SystemEventRepo",
                 return_value=event_repo,
             ),
         }
