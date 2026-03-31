@@ -18,6 +18,23 @@ class LLMError(ChieflyError):
     """Raised when LLM classification fails."""
 
 
+class RateLimitError(LLMError):
+    """Raised when a provider rate limit is exceeded."""
+
+    def __init__(
+        self,
+        provider: str,
+        retry_after_seconds: float,
+        message: str = "",
+    ) -> None:
+        self.provider = provider
+        self.retry_after_seconds = retry_after_seconds
+        super().__init__(
+            message
+            or f"Rate limit exceeded for provider '{provider}'. Retry after {retry_after_seconds:.0f}s."
+        )
+
+
 class GoogleTasksError(ChieflyError):
     """Raised when a Google Tasks API call fails."""
 
