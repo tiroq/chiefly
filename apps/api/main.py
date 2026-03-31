@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 
 from apps.api.config import get_settings
 from apps.api.logging import configure_logging, get_logger
@@ -143,6 +143,10 @@ def _mount_miniapp_spa(app: FastAPI) -> None:
     if not index_html.exists():
         logger.warning("miniapp_dist_not_found", path=str(MINIAPP_DIST))
         return
+
+    @app.get("/", include_in_schema=False)
+    async def redirect_root_to_app() -> RedirectResponse:
+        return RedirectResponse(url="/app", status_code=302)
 
     @app.get("/app/{path:path}", include_in_schema=False)
     @app.get("/app", include_in_schema=False)
