@@ -6,6 +6,9 @@ Purpose:
 - debugging
 - LLM provider and model configuration
 
+Port: 8001 (internal only, not exposed via Cloudflare Tunnel)
+Host: 127.0.0.1 (configurable via ADMIN_HOST)
+
 Routes:
 /admin
 /admin/tasks
