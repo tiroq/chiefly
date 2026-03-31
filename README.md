@@ -87,7 +87,7 @@ You dump anything into a Google Tasks list called **Inbox** — rough notes, voi
 - PostgreSQL 15+
 - A Telegram bot (create via [@BotFather](https://t.me/BotFather))
 - Google Cloud project with Tasks API enabled
-- An LLM API key (OpenAI or compatible)
+- An LLM API key (OpenAI, GitHub Models, or Ollama)
 
 ### 1. Clone and Install
 
@@ -113,9 +113,13 @@ cp .env.example .env
 | `TELEGRAM_CHAT_ID` | Your personal Telegram chat ID |
 | `GOOGLE_CREDENTIALS_FILE` | Path to Google service account JSON |
 | `GOOGLE_TASKS_DEFAULT_TASKLIST_ID` | Google Tasks default list ID (replaces `GOOGLE_TASKS_INBOX_LIST_ID`) |
-| `LLM_PROVIDER` | `openai` (or compatible) |
-| `LLM_MODEL` | e.g. `gpt-4o` |
-| `LLM_API_KEY` | Your LLM API key |
+| `LLM_PROVIDER` | `openai`, `ollama`, or `github_models` |
+| `LLM_MODEL` | e.g. `gpt-4o`, `openai/gpt-4o` |
+| `LLM_API_KEY` | Your LLM API key (or GitHub PAT for `github_models`) |
+| `LLM_FAST_MODEL` | Fast model for normalize/rewrite (optional, requires `LLM_AUTO_MODE=true`) |
+| `LLM_QUALITY_MODEL` | Quality model for classify/describe (optional, requires `LLM_AUTO_MODE=true`) |
+| `LLM_FALLBACK_MODEL` | Fallback model when primary fails (optional) |
+| `LLM_AUTO_MODE` | Enable multi-model routing (`true`/`false`, default: `false`) |
 | `SYNC_INTERVAL_SECONDS` | Sync polling interval in seconds (default: 60, replaces `INBOX_POLL_INTERVAL_SECONDS`) |
 | `DAILY_REVIEW_CRON` | Cron expression (default: `0 9 * * *`) |
 | `TIMEZONE` | Your timezone (e.g. `Europe/Moscow`) |
@@ -146,6 +150,26 @@ For webhook mode (production), set your webhook URL:
 ```
 https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://yourapp.com/telegram/webhook
 ```
+
+### 5. LLM Provider Setup
+
+**OpenAI** (default): Set `LLM_PROVIDER=openai`, `LLM_MODEL=gpt-4o`, and `LLM_API_KEY`.
+
+**Ollama** (local): Set `LLM_PROVIDER=ollama` and `LLM_MODEL=<model-name>`. Defaults to `http://localhost:11434/v1`.
+
+**GitHub Models** (free tier available): Run the interactive setup script:
+
+```bash
+python scripts/setup_github_models.py
+```
+
+This will:
+1. Validate your GitHub PAT (needs `models:read` scope)
+2. Fetch the model catalog from GitHub
+3. Let you pick primary, fast, quality, and fallback models
+4. Write the config to `.env`
+
+You can also configure models through the admin panel at `/admin/model-settings` after the app is running.
 
 ---
 
@@ -220,6 +244,7 @@ make test-integration
 | GET | `/admin/reviews/latest` | Get latest daily review |
 | POST | `/admin/poll-inbox-now` | Trigger sync manually (deprecated alias — use `/admin/sync-now`) |
 | POST | `/admin/send-review-now` | Trigger daily review manually |
+| GET | `/admin/model-settings` | LLM provider and model configuration |
 
 ---
 
@@ -237,6 +262,7 @@ make test-integration
 | `/pause` | Toggle review queue pause on/off |
 | `/next` | Send next queued proposal |
 | `/backlog` | Show queue status and pending items |
+| `/settings` | Show current LLM provider and model config |
 
 ---
 
