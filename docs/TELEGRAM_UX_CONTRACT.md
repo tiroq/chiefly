@@ -11,6 +11,7 @@ Commands:
 /next
 /backlog
 /pause
+/settings
 
 Card must show:
 - raw input
@@ -26,3 +27,12 @@ Actions:
 - change project
 - change type
 - discard
+
+## Settings Command
+
+`/settings` displays current configuration including:
+- LLM provider, model, auto mode status
+- Fast/quality/fallback models (when auto mode is on)
+- Link to admin panel for changes
+
+No credential entry or provider switching through Telegram — admin panel only.
