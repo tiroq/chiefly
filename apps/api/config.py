@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -35,6 +36,20 @@ class Settings(BaseSettings):
     llm_quality_model: str = ""
     llm_fallback_model: str = ""
     llm_auto_mode: bool = False
+
+    rate_limit_enabled: bool = True
+    rate_limit_capacity: int = 10
+    rate_limit_refill_amount: int = 1
+    rate_limit_refill_interval_seconds: int = 30
+
+    @field_validator(
+        "rate_limit_capacity", "rate_limit_refill_amount", "rate_limit_refill_interval_seconds"
+    )
+    @classmethod
+    def _rate_limit_fields_must_be_positive(cls, v: int, info) -> int:
+        if v <= 0:
+            raise ValueError(f"{info.field_name} must be positive, got {v}")
+        return v
 
     sync_interval_seconds: int = 60
 
