@@ -8,6 +8,7 @@ from typing import TypeVar
 from pydantic import BaseModel
 
 from apps.api.logging import get_logger
+from apps.api.services.rate_limiter import ProviderRateLimiter, get_rate_limiter
 from apps.api.prompts.pipeline import (
     CLASSIFY_ROUTE_TITLE,
     DESCRIPTION,
@@ -16,6 +17,7 @@ from apps.api.prompts.pipeline import (
     STEPS,
 )
 from core.domain.enums import ConfidenceBand, TaskKind
+from core.domain.exceptions import RateLimitError
 from core.schemas.llm import (
     ClassifyRouteResult,
     DescriptionResult,
@@ -123,6 +125,7 @@ class LLMService:
         quality_model: str = "",
         fallback_model: str = "",
         auto_mode: bool = False,
+        rate_limiter: ProviderRateLimiter | None = None,
     ) -> None:
         self._provider = provider
         self._model = model
@@ -132,6 +135,7 @@ class LLMService:
         self._quality_model = quality_model
         self._fallback_model = fallback_model
         self._auto_mode = auto_mode
+        self._rate_limiter = rate_limiter
 
     @classmethod
     def from_effective_config(cls, config) -> "LLMService":
@@ -144,6 +148,7 @@ class LLMService:
             quality_model=config.quality_model,
             fallback_model=config.fallback_model,
             auto_mode=config.auto_mode,
+            rate_limiter=get_rate_limiter(),
         )
 
     def _resolve_model(self, purpose: str = "default") -> str:
@@ -211,6 +216,13 @@ class LLMService:
             "llm_request",
             **request_log,
         )
+        if self._rate_limiter is not None:
+            decision = self._rate_limiter.check(self._provider)
+            if not decision.allowed:
+                raise RateLimitError(
+                    provider=self._provider,
+                    retry_after_seconds=decision.retry_after_seconds,
+                )
         response = client.chat.completions.create(
             model=model,
             messages=messages,
@@ -299,6 +311,8 @@ class LLMService:
                     attempt=attempt,
                 )
                 return result
+            except RateLimitError:
+                raise
             except Exception as e:
                 logger.warning(
                     "llm_step_failed",
@@ -508,6 +522,8 @@ class LLMService:
                     attempt=attempt,
                 )
                 return result
+            except RateLimitError:
+                raise
             except Exception as e:
                 logger.warning(
                     "llm_classification_failed",
@@ -565,6 +581,8 @@ Return ONLY valid JSON:
                         example_patterns if isinstance(example_patterns, list) else []
                     ),
                 }
+            except RateLimitError:
+                raise
             except Exception as e:
                 logger.warning(
                     "project_description_generation_failed", attempt=attempt, error=str(e)
@@ -602,6 +620,8 @@ Return ONLY valid JSON:
                 if title:
                     logger.info("llm_rewrite_success", model=model)
                     return title
+            except RateLimitError:
+                raise
             except Exception as exc:
                 logger.warning("llm_rewrite_failed", attempt=attempt, error=str(exc))
         return raw_text
@@ -644,6 +664,8 @@ Return ONLY valid JSON:
                 if draft:
                     logger.info("draft_message_generated", model=self._model, tone=tone)
                     return draft
+            except RateLimitError:
+                raise
             except Exception as exc:
                 logger.warning("draft_message_generation_failed", attempt=attempt, error=str(exc))
         return f"Follow up on: {task_title}"
