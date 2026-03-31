@@ -1,26 +1,22 @@
-"""
-Main FastAPI application entry point.
-"""
-
 from __future__ import annotations
 
 import uuid
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
-from starlette.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
 from apps.api.config import get_settings
 from apps.api.logging import configure_logging, get_logger
+from apps.api.miniapp.routes import router as miniapp_router
 from apps.api.routes import admin, health, telegram_webhook
-from apps.api.routes.admin_ui import router as admin_ui_router
-from apps.api.routes.admin_api import router as admin_api_router
-from apps.api.admin.auth import create_login_router, htmx_exception_handler
 from apps.api.services.scheduler_service import setup_scheduler
 from apps.api.workers.daily_review_worker import run_daily_review
 from apps.api.workers.processing_worker import run_processing
 from apps.api.workers.project_sync_worker import run_project_sync
 from apps.api.workers.sync_worker import run_sync
+from db.session import get_session_factory
 
 logger = get_logger(__name__)
 
@@ -120,6 +116,9 @@ async def lifespan(app: FastAPI):
     logger.info("chiefly_shutdown")
 
 
+MINIAPP_DIST = Path(__file__).resolve().parent.parent.parent / "apps" / "miniapp" / "dist"
+
+
 def create_app() -> FastAPI:
     configure_logging()
     app = FastAPI(
@@ -130,27 +129,29 @@ def create_app() -> FastAPI:
     )
     app.include_router(health.router)
     app.include_router(telegram_webhook.router)
-
-    # Mount static files for admin UI
-    app.mount("/static/admin", StaticFiles(directory="apps/api/static/admin"), name="admin_static")
-
-    # Register HTMX exception handler
-    app.add_exception_handler(Exception, htmx_exception_handler)
-
-    # Include admin UI router BEFORE old admin router to avoid route conflicts
-    app.include_router(admin_ui_router, prefix="/admin")
-
-    # Include admin API router
-    app.include_router(admin_api_router, prefix="/admin/api")
-
-    # Include login router (has its own /admin/login prefix)
-    settings = get_settings()
-    app.include_router(create_login_router(settings.admin_token))
-
-    # Legacy admin JSON API routes (after UI routes to avoid conflicts)
     app.include_router(admin.router)
+    app.include_router(miniapp_router)
+
+    _mount_miniapp_spa(app)
 
     return app
+
+
+def _mount_miniapp_spa(app: FastAPI) -> None:
+    index_html = MINIAPP_DIST / "index.html"
+
+    if not index_html.exists():
+        logger.warning("miniapp_dist_not_found", path=str(MINIAPP_DIST))
+        return
+
+    @app.get("/app/{path:path}", include_in_schema=False)
+    @app.get("/app", include_in_schema=False)
+    async def serve_miniapp_spa(path: str = "") -> FileResponse:
+        if path:
+            file_path = (MINIAPP_DIST / path).resolve()
+            if file_path.is_file() and str(file_path).startswith(str(MINIAPP_DIST)):
+                return FileResponse(str(file_path))
+        return FileResponse(str(index_html), media_type="text/html")
 
 
 app = create_app()

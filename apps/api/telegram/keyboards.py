@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import uuid as _uuid
+
 from aiogram.types import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     KeyboardButton,
     ReplyKeyboardMarkup,
+    WebAppInfo,
 )
 
+from apps.api.config import get_settings
 from core.domain.enums import ReviewAction, TaskKind
 from core.schemas.telegram import CallbackPayload
 
@@ -46,36 +50,49 @@ def proposal_keyboard(short_id: str, has_disambiguation: bool = False) -> Inline
             callback_data=CallbackPayload(action=action, task_id=short_id).encode(),
         )
 
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
+    rows: list[list[InlineKeyboardButton]] = [
+        [
+            _btn("✅ Confirm", ReviewAction.CONFIRM),
+            _btn("✏️ Edit Title", ReviewAction.EDIT),
+        ],
+        [
+            _btn("📁 Change Project", ReviewAction.CHANGE_PROJECT),
+            _btn("🔄 Change Type", ReviewAction.CHANGE_TYPE),
+        ],
+    ]
+    if has_disambiguation:
+        rows.append(
             [
-                _btn("✅ Confirm", ReviewAction.CONFIRM),
-                _btn("✏️ Edit Title", ReviewAction.EDIT),
-            ],
-            [
-                _btn("📁 Change Project", ReviewAction.CHANGE_PROJECT),
-                _btn("🔄 Change Type", ReviewAction.CHANGE_TYPE),
-            ],
-            *(
-                [
-                    [
-                        _btn("❓ Clarify", ReviewAction.CLARIFY),
-                        _btn("📋 Show Steps", ReviewAction.SHOW_STEPS),
-                    ]
-                ]
-                if has_disambiguation
-                else []
-            ),
-            [
-                _btn("💬 Draft Message", ReviewAction.DRAFT_MESSAGE),
-                _btn("⏭ Skip", ReviewAction.SKIP),
-            ],
-            [
-                _btn("🗑 Discard", ReviewAction.DISCARD),
-                InlineKeyboardButton(text="⏸ Pause", callback_data="queue:pause"),
-            ],
+                _btn("❓ Clarify", ReviewAction.CLARIFY),
+                _btn("📋 Show Steps", ReviewAction.SHOW_STEPS),
+            ]
+        )
+    rows.append(
+        [
+            _btn("💬 Draft Message", ReviewAction.DRAFT_MESSAGE),
+            _btn("⏭ Skip", ReviewAction.SKIP),
         ]
     )
+    rows.append(
+        [
+            _btn("🗑 Discard", ReviewAction.DISCARD),
+            InlineKeyboardButton(text="⏸ Pause", callback_data="queue:pause"),
+        ]
+    )
+
+    mini_app_url = get_settings().mini_app_url
+    if mini_app_url:
+        full_uuid = str(_uuid.UUID(short_id))
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="📱 Open in App",
+                    web_app=WebAppInfo(url=f"{mini_app_url}/app/review/{full_uuid}"),
+                )
+            ]
+        )
+
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def discard_confirm_keyboard(short_id: str) -> InlineKeyboardMarkup:
@@ -193,43 +210,50 @@ def settings_keyboard(settings: dict[str, bool | int]) -> InlineKeyboardMarkup:
         )
 
     batch_size = settings.get("batch_size", 1)
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [_toggle("auto_next", "Auto-next", settings.get("auto_next", True))],
+    rows: list[list[InlineKeyboardButton]] = [
+        [_toggle("auto_next", "Auto-next", settings.get("auto_next", True))],
+        [
+            InlineKeyboardButton(
+                text=f"Batch size: {batch_size}",
+                callback_data="setting:batch_size",
+            )
+        ],
+        [_toggle("paused", "Paused", settings.get("paused", False))],
+        [_toggle("sync_summary", "Sync summary", settings.get("sync_summary", True))],
+        [_toggle("daily_brief", "Daily brief", settings.get("daily_brief", True))],
+        [_toggle("show_confidence", "Show confidence", settings.get("show_confidence", True))],
+        [_toggle("show_raw_input", "Show raw input", settings.get("show_raw_input", True))],
+        [
+            _toggle(
+                "draft_suggestions",
+                "Draft suggestions",
+                settings.get("draft_suggestions", True),
+            )
+        ],
+        [
+            _toggle(
+                "ambiguity_prompts",
+                "Ambiguity prompts",
+                settings.get("ambiguity_prompts", True),
+            )
+        ],
+        [_toggle("show_steps_auto", "Show steps auto", settings.get("show_steps_auto", False))],
+        [InlineKeyboardButton(text="🔌 Test LLM Connection", callback_data="settings:test_llm")],
+    ]
+
+    mini_app_url = get_settings().mini_app_url
+    if mini_app_url:
+        rows.append(
             [
                 InlineKeyboardButton(
-                    text=f"Batch size: {batch_size}",
-                    callback_data="setting:batch_size",
+                    text="📱 Open Settings in App",
+                    web_app=WebAppInfo(url=f"{mini_app_url}/app/settings"),
                 )
-            ],
-            [_toggle("paused", "Paused", settings.get("paused", False))],
-            [_toggle("sync_summary", "Sync summary", settings.get("sync_summary", True))],
-            [_toggle("daily_brief", "Daily brief", settings.get("daily_brief", True))],
-            [_toggle("show_confidence", "Show confidence", settings.get("show_confidence", True))],
-            [_toggle("show_raw_input", "Show raw input", settings.get("show_raw_input", True))],
-            [
-                _toggle(
-                    "draft_suggestions",
-                    "Draft suggestions",
-                    settings.get("draft_suggestions", True),
-                )
-            ],
-            [
-                _toggle(
-                    "ambiguity_prompts",
-                    "Ambiguity prompts",
-                    settings.get("ambiguity_prompts", True),
-                )
-            ],
-            [_toggle("show_steps_auto", "Show steps auto", settings.get("show_steps_auto", False))],
-            [
-                InlineKeyboardButton(
-                    text="🔌 Test LLM Connection", callback_data="settings:test_llm"
-                )
-            ],
-            [InlineKeyboardButton(text="↩️ Back", callback_data="settings:close")],
-        ]
-    )
+            ]
+        )
+
+    rows.append([InlineKeyboardButton(text="↩️ Back", callback_data="settings:close")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def backlog_keyboard() -> InlineKeyboardMarkup:

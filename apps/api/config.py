@@ -1,12 +1,16 @@
 from functools import lru_cache
+from typing import ClassVar
 
-from pydantic import field_validator
+from pydantic import ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     app_env: str = "development"
     log_level: str = "INFO"
+    admin_host: str = "127.0.0.1"
+    admin_port: int = 8001
+    mini_app_url: str = ""
 
     database_url: str = "postgresql+asyncpg://chiefly:chiefly@localhost:5433/chiefly"
 
@@ -46,7 +50,7 @@ class Settings(BaseSettings):
         "rate_limit_capacity", "rate_limit_refill_amount", "rate_limit_refill_interval_seconds"
     )
     @classmethod
-    def _rate_limit_fields_must_be_positive(cls, v: int, info) -> int:
+    def _rate_limit_fields_must_be_positive(cls, v: int, info: ValidationInfo) -> int:
         if v <= 0:
             raise ValueError(f"{info.field_name} must be positive, got {v}")
         return v
@@ -72,7 +76,7 @@ class Settings(BaseSettings):
 
     admin_token: str = "admin"
 
-    model_config = SettingsConfigDict(
+    model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
