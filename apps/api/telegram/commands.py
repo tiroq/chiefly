@@ -289,11 +289,15 @@ async def cmd_backlog(message: Message):
 
 @command_router.message(Command("settings"))
 async def cmd_settings(message: Message):
+    from apps.api.config import get_settings
+    from apps.api.services.model_settings_service import get_effective_llm_config
     from apps.api.services.user_settings_service import get_user_settings
 
     factory = get_session_factory()
+    settings = get_settings()
     async with factory() as session:
         user_settings = await get_user_settings(session)
+        llm_config = await get_effective_llm_config(session, settings)
 
     lines = [
         "⚙️ <b>Settings</b>",
@@ -312,7 +316,21 @@ async def cmd_settings(message: Message):
         f"  Show raw input: {'ON' if user_settings.get('show_raw_input') else 'OFF'}",
         f"  Draft suggestions: {'ON' if user_settings.get('draft_suggestions') else 'OFF'}",
         f"  Ambiguity prompts: {'ON' if user_settings.get('ambiguity_prompts') else 'OFF'}",
+        "",
+        "<b>LLM:</b>",
+        f"  Provider: {llm_config.provider or '(not set)'}",
+        f"  Model: {llm_config.model or '(not set)'}",
+        f"  Auto-mode: {'ON' if llm_config.auto_mode else 'OFF'}",
     ]
+
+    if llm_config.auto_mode:
+        lines.append(f"  Fast model: {llm_config.fast_model or '(default)'}")
+        lines.append(f"  Quality model: {llm_config.quality_model or '(default)'}")
+    if llm_config.fallback_model:
+        lines.append(f"  Fallback model: {llm_config.fallback_model}")
+
+    lines.append("")
+    lines.append("<i>Configure models at /admin/model-settings</i>")
 
     await message.answer(
         "\n".join(lines),

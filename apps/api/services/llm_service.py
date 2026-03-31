@@ -113,11 +113,56 @@ def _strip_code_fences(text: str) -> str:
 
 
 class LLMService:
-    def __init__(self, provider: str, model: str, api_key: str, base_url: str = "") -> None:
+    def __init__(
+        self,
+        provider: str,
+        model: str,
+        api_key: str,
+        base_url: str = "",
+        fast_model: str = "",
+        quality_model: str = "",
+        fallback_model: str = "",
+        auto_mode: bool = False,
+    ) -> None:
         self._provider = provider
         self._model = model
         self._api_key = api_key
         self._base_url = base_url
+        self._fast_model = fast_model
+        self._quality_model = quality_model
+        self._fallback_model = fallback_model
+        self._auto_mode = auto_mode
+
+    @classmethod
+    def from_effective_config(cls, config) -> "LLMService":
+        return cls(
+            provider=config.provider,
+            model=config.model,
+            api_key=config.api_key,
+            base_url=config.base_url,
+            fast_model=config.fast_model,
+            quality_model=config.quality_model,
+            fallback_model=config.fallback_model,
+            auto_mode=config.auto_mode,
+        )
+
+    def _resolve_model(self, purpose: str = "default") -> str:
+        """Return the model to use for a given purpose.
+
+        When auto_mode is off, always returns the primary model.
+        When auto_mode is on, routes to the appropriate tier:
+          - "fast": fast_model (normalize, rewrite_title)
+          - "quality": quality_model (classify, disambiguate, project description)
+          - "default": primary model
+        Falls back to primary model when the tier model is not configured.
+        """
+        if not self._auto_mode:
+            return self._model
+        if purpose == "fast" and self._fast_model:
+            return self._fast_model
+        if purpose == "quality" and self._quality_model:
+            return self._quality_model
+        return self._model
 
     def _get_client(self):
         from openai import OpenAI
@@ -127,6 +172,11 @@ class LLMService:
                 base_url=self._base_url or "http://localhost:11434/v1",
                 api_key="ollama",
             )
+        if self._provider == "github_models":
+            return OpenAI(
+                base_url=self._base_url or "https://models.github.ai/inference",
+                api_key=self._api_key,
+            )
         return OpenAI(api_key=self._api_key)
 
     def _call_llm_sync(
@@ -135,10 +185,12 @@ class LLMService:
         step_name: str = "",
         reqid: str | None = None,
         task_id: str | None = None,
+        model_override: str = "",
     ) -> str:
         import re
 
         reqid = reqid or uuid.uuid4().hex[:8]
+        model = model_override or self._model
         client = self._get_client()
         messages: list[dict] = []
         if self._provider == "ollama":
@@ -146,7 +198,7 @@ class LLMService:
         messages.append({"role": "user", "content": prompt})
         request_log: dict[str, str | int] = {
             "reqid": reqid,
-            "model": self._model,
+            "model": model,
             "provider": self._provider,
             "prompt_chars": len(prompt),
             "prompt": prompt,
@@ -160,7 +212,7 @@ class LLMService:
             **request_log,
         )
         response = client.chat.completions.create(
-            model=self._model,
+            model=model,
             messages=messages,
             temperature=0.2,
             max_tokens=2048,
@@ -170,7 +222,7 @@ class LLMService:
         usage = response.usage
         response_log: dict[str, str | int | None] = {
             "reqid": reqid,
-            "model": self._model,
+            "model": model,
             "response_chars": len(content),
             "response": content,
             "prompt_tokens": usage.prompt_tokens if usage else None,
@@ -196,6 +248,33 @@ class LLMService:
         step_name: str,
         task_id: str | None = None,
         retries: int = 2,
+        purpose: str = "default",
+    ) -> T | None:
+        model = self._resolve_model(purpose)
+        result = await self._try_call_and_parse(prompt, schema, step_name, task_id, retries, model)
+        if result is not None:
+            return result
+        if self._fallback_model and self._fallback_model != model:
+            logger.info(
+                "llm_fallback_triggered",
+                step=step_name,
+                primary_model=model,
+                fallback_model=self._fallback_model,
+                task_id=task_id,
+            )
+            return await self._try_call_and_parse(
+                prompt, schema, step_name, task_id, 1, self._fallback_model
+            )
+        return None
+
+    async def _try_call_and_parse(
+        self,
+        prompt: str,
+        schema: type[T],
+        step_name: str,
+        task_id: str | None = None,
+        retries: int = 2,
+        model: str = "",
     ) -> T | None:
         for attempt in range(retries):
             try:
@@ -206,6 +285,7 @@ class LLMService:
                     step_name,
                     reqid,
                     task_id,
+                    model,
                 )
                 raw_response = _strip_code_fences(raw_response)
                 data = json.loads(raw_response)
@@ -215,7 +295,7 @@ class LLMService:
                     step=step_name,
                     reqid=reqid,
                     task_id=task_id,
-                    model=self._model,
+                    model=model,
                     attempt=attempt,
                 )
                 return result
@@ -245,6 +325,7 @@ class LLMService:
             NormalizationResult,
             "normalize",
             task_id=task_id,
+            purpose="fast",
         )
         if result is not None:
             return result
@@ -271,6 +352,7 @@ class LLMService:
             ClassifyRouteResult,
             "classify_route_title",
             task_id=task_id,
+            purpose="quality",
         )
 
     async def generate_description(
@@ -285,6 +367,7 @@ class LLMService:
             DescriptionResult,
             "description",
             task_id=task_id,
+            purpose="quality",
         )
 
     async def generate_steps(
@@ -299,6 +382,7 @@ class LLMService:
             StepsResult,
             "steps",
             task_id=task_id,
+            purpose="quality",
         )
 
     async def disambiguate(
@@ -313,6 +397,7 @@ class LLMService:
             DisambiguationResult,
             "disambiguate",
             task_id=task_id,
+            purpose="quality",
         )
 
     async def run_pipeline(
@@ -462,6 +547,8 @@ Return ONLY valid JSON:
                     prompt,
                     "generate_project_description",
                     reqid,
+                    None,
+                    self._resolve_model("quality"),
                 )
                 raw_response = _strip_code_fences(raw_response)
                 data = json.loads(raw_response)
@@ -499,6 +586,7 @@ Return ONLY valid JSON:
             "Start with a verb. Return ONLY the title — no JSON, no explanation, no quotes.\n\n"
             f"Raw text: {raw_text}"
         )
+        model = self._resolve_model("fast")
         for attempt in range(2):
             try:
                 reqid = uuid.uuid4().hex[:8]
@@ -507,10 +595,12 @@ Return ONLY valid JSON:
                     prompt,
                     "rewrite_title",
                     reqid,
+                    None,
+                    model,
                 )
                 title = result.strip().strip('"').strip("'")[:500]
                 if title:
-                    logger.info("llm_rewrite_success", model=self._model)
+                    logger.info("llm_rewrite_success", model=model)
                     return title
             except Exception as exc:
                 logger.warning("llm_rewrite_failed", attempt=attempt, error=str(exc))

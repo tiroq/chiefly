@@ -738,19 +738,17 @@ async def handle_draft_message(callback: CallbackQuery):
         task_kind = proposed.get("kind", "task")
         next_action = proposed.get("next_action")
 
+        from apps.api.services.llm_service import LLMService
+        from apps.api.services.model_settings_service import get_effective_llm_config
+
+        settings = get_settings()
+        llm_config = await get_effective_llm_config(session, settings)
+
     from apps.api.telegram.keyboards import draft_keyboard
 
-    settings = get_settings()
     fallback_note = ""
     try:
-        from apps.api.services.llm_service import LLMService
-
-        llm = LLMService(
-            provider=settings.llm_provider,
-            model=settings.llm_model,
-            api_key=settings.llm_api_key,
-            base_url=settings.llm_base_url,
-        )
+        llm = LLMService.from_effective_config(llm_config)
         draft_text = await llm.generate_draft_message(
             task_title=task_title,
             task_kind=task_kind,
@@ -804,19 +802,17 @@ async def handle_draft_shorter(callback: CallbackQuery):
             return
         proposed = review_session.proposed_changes or {}
 
+        from apps.api.services.llm_service import LLMService
+        from apps.api.services.model_settings_service import get_effective_llm_config
+
+        settings = get_settings()
+        llm_config = await get_effective_llm_config(session, settings)
+
     from apps.api.telegram.keyboards import draft_keyboard
 
-    settings = get_settings()
     fallback_note = ""
     try:
-        from apps.api.services.llm_service import LLMService
-
-        llm = LLMService(
-            provider=settings.llm_provider,
-            model=settings.llm_model,
-            api_key=settings.llm_api_key,
-            base_url=settings.llm_base_url,
-        )
+        llm = LLMService.from_effective_config(llm_config)
         draft_text = await llm.generate_draft_message(
             task_title=proposed.get("normalized_title", ""),
             task_kind=proposed.get("kind", "task"),
@@ -853,19 +849,17 @@ async def handle_draft_formal(callback: CallbackQuery):
             return
         proposed = review_session.proposed_changes or {}
 
+        from apps.api.services.llm_service import LLMService
+        from apps.api.services.model_settings_service import get_effective_llm_config
+
+        settings = get_settings()
+        llm_config = await get_effective_llm_config(session, settings)
+
     from apps.api.telegram.keyboards import draft_keyboard
 
-    settings = get_settings()
     fallback_note = ""
     try:
-        from apps.api.services.llm_service import LLMService
-
-        llm = LLMService(
-            provider=settings.llm_provider,
-            model=settings.llm_model,
-            api_key=settings.llm_api_key,
-            base_url=settings.llm_base_url,
-        )
+        llm = LLMService.from_effective_config(llm_config)
         draft_text = await llm.generate_draft_message(
             task_title=proposed.get("normalized_title", ""),
             task_kind=proposed.get("kind", "task"),
@@ -991,6 +985,37 @@ async def handle_setting_toggle(callback: CallbackQuery):
         text = msg.text or "⚙️ <b>Settings</b>"
         await msg.edit_text(text, reply_markup=settings_keyboard(user_settings))
     await callback.answer("Updated")
+
+
+@callback_router.callback_query(F.data == "settings:test_llm")
+async def handle_test_llm_connection(callback: CallbackQuery):
+    import asyncio
+    from apps.api.services.model_settings_service import get_effective_llm_config
+    from apps.api.services.llm_service import LLMService
+
+    await callback.answer("Testing connection...", show_alert=False)
+
+    settings = get_settings()
+    factory = get_session_factory()
+
+    try:
+        async with factory() as session:
+            llm_config = await get_effective_llm_config(session, settings)
+
+        llm_svc = LLMService.from_effective_config(llm_config)
+        client = llm_svc._get_client()
+        await asyncio.to_thread(
+            client.chat.completions.create,
+            model=llm_config.model,
+            messages=[{"role": "user", "content": "Say OK."}],
+            max_tokens=5,
+        )
+        result_text = f"✅ LLM connection successful!\nProvider: {llm_config.provider}\nModel: {llm_config.model}"
+    except Exception as exc:
+        result_text = f"❌ LLM connection failed:\n{exc}"
+
+    if callback.message:
+        await callback.message.answer(result_text)
 
 
 @callback_router.callback_query(F.data == "settings:close")

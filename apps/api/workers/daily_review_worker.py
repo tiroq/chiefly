@@ -7,6 +7,7 @@ from __future__ import annotations
 from apps.api.config import get_settings
 from apps.api.logging import get_logger
 from apps.api.services.llm_service import LLMService
+from apps.api.services.model_settings_service import get_effective_llm_config
 from apps.api.services.review_service import DailyReviewService
 from apps.api.services.telegram_service import TelegramService
 from db.session import get_session_factory
@@ -19,11 +20,13 @@ async def run_daily_review() -> None:
     settings = get_settings()
 
     telegram = TelegramService(settings.telegram_bot_token, settings.telegram_chat_id)
-    llm = LLMService(settings.llm_provider, settings.llm_model, settings.llm_api_key, settings.llm_base_url)
 
     factory = get_session_factory()
     try:
         async with factory() as session:
+            llm_config = await get_effective_llm_config(session, settings)
+            llm = LLMService.from_effective_config(llm_config)
+
             service = DailyReviewService(
                 session=session,
                 telegram=telegram,

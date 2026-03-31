@@ -25,6 +25,14 @@ from apps.api.services.revision_service import RevisionService
 from apps.api.services.rollback_service import RollbackService
 from apps.api.services.system_event_service import SystemEventService
 from apps.api.services.telegram_service import TelegramService
+from apps.api.services.model_settings_service import (
+    get_auth_status,
+    get_model_settings,
+    get_effective_llm_config,
+    save_model_settings,
+    reset_model_settings,
+    SUPPORTED_PROVIDERS,
+)
 from core.domain import notes_codec
 from core.domain.enums import ProcessingReason, WorkflowStatus
 from core.domain.exceptions import (
@@ -52,13 +60,205 @@ templates.env.filters["tojson"] = lambda v, indent=None: Markup(
 
 settings = get_settings()
 router = APIRouter(
-    prefix="/tasks",
     tags=["admin-api"],
     dependencies=[Depends(require_admin(settings.admin_token))],
 )
 
 
-@router.post("/{stable_id}/retry")
+@router.post("/model-settings/save")
+async def save_model_settings_endpoint(
+    request: Request,
+    provider: str = Form(""),
+    model: str = Form(""),
+    api_key: str = Form(""),
+    base_url: str = Form(""),
+    fast_model: str = Form(""),
+    quality_model: str = Form(""),
+    fallback_model: str = Form(""),
+    auto_mode: bool = Form(False),
+    session: AsyncSession = Depends(get_session),
+):
+    if provider and provider not in SUPPORTED_PROVIDERS:
+        return JSONResponse(
+            status_code=400,
+            content={"status": "error", "message": f"Unsupported provider: {provider}"},
+            headers={
+                "HX-Trigger": json.dumps(
+                    {
+                        "showError": f"Unsupported provider: {provider}. Choose from: {', '.join(SUPPORTED_PROVIDERS)}"
+                    }
+                )
+            },
+        )
+
+    settings_val = get_settings()
+    current_settings = await get_model_settings(session)
+
+    final_api_key = api_key if api_key else str(current_settings.get("api_key", ""))
+
+    new_settings = {
+        "provider": provider,
+        "model": model,
+        "api_key": final_api_key,
+        "base_url": base_url,
+        "fast_model": fast_model,
+        "quality_model": quality_model,
+        "fallback_model": fallback_model,
+        "auto_mode": auto_mode,
+    }
+
+    await save_model_settings(session, new_settings)
+    await session.commit()
+
+    effective_config = await get_effective_llm_config(session, settings_val)
+
+    context = {
+        "request": request,
+        "settings": new_settings,
+        "effective_config": effective_config,
+        "supported_providers": SUPPORTED_PROVIDERS,
+        "env_settings": settings_val,
+        "auth_status": get_auth_status(new_settings, settings_val),
+    }
+
+    return templates.TemplateResponse(
+        request=request,
+        name="admin/partials/_model_settings.html",
+        context=context,
+        headers={"HX-Trigger": '{"showToast": "Settings saved successfully"}'},
+    )
+
+
+@router.post("/model-settings/test")
+async def test_model_settings(
+    provider: str = Form(""),
+    model: str = Form(""),
+    api_key: str = Form(""),
+    base_url: str = Form(""),
+    fast_model: str = Form(""),
+    quality_model: str = Form(""),
+    fallback_model: str = Form(""),
+    auto_mode: bool = Form(False),
+    session: AsyncSession = Depends(get_session),
+):
+    import asyncio
+
+    if provider and provider not in SUPPORTED_PROVIDERS:
+        return JSONResponse(
+            content={"status": "error", "message": f"Unsupported provider: {provider}"},
+            headers={"HX-Trigger": json.dumps({"showError": f"Unsupported provider: {provider}"})},
+        )
+
+    settings_val = get_settings()
+    current_settings = await get_model_settings(session)
+
+    final_api_key = api_key if api_key else str(current_settings.get("api_key", ""))
+
+    test_provider = provider or settings_val.llm_provider
+    test_model = model or settings_val.llm_model
+    test_api_key = final_api_key or settings_val.llm_api_key
+    test_base_url = base_url or settings_val.llm_base_url
+
+    try:
+        llm_svc = LLMService(
+            provider=test_provider,
+            model=test_model,
+            api_key=test_api_key,
+            base_url=test_base_url,
+        )
+
+        client = llm_svc._get_client()
+        await asyncio.to_thread(
+            client.chat.completions.create,
+            model=test_model,
+            messages=[{"role": "user", "content": "Say OK."}],
+            max_tokens=5,
+        )
+
+        return JSONResponse(
+            content={"status": "ok", "message": "Connection successful!"},
+            headers={"HX-Trigger": '{"showToast": "Connection successful!"}'},
+        )
+    except Exception as exc:
+        logger.error("model_settings_test_failed", error=str(exc))
+        return JSONResponse(
+            content={"status": "error", "message": f"Connection failed: {exc}"},
+            headers={"HX-Trigger": json.dumps({"showError": f"Connection failed: {exc}"})},
+        )
+
+
+@router.post("/model-settings/reset")
+async def reset_model_settings_endpoint(
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+):
+    settings_val = get_settings()
+    await reset_model_settings(session)
+    await session.commit()
+
+    model_settings = await get_model_settings(session)
+    effective_config = await get_effective_llm_config(session, settings_val)
+
+    context = {
+        "request": request,
+        "settings": model_settings,
+        "effective_config": effective_config,
+        "supported_providers": SUPPORTED_PROVIDERS,
+        "env_settings": settings_val,
+        "auth_status": get_auth_status(model_settings, settings_val),
+    }
+
+    return templates.TemplateResponse(
+        request=request,
+        name="admin/partials/_model_settings.html",
+        context=context,
+        headers={"HX-Trigger": '{"showToast": "Settings reset to defaults"}'},
+    )
+
+
+@router.post("/model-settings/reset-auth")
+async def reset_auth_endpoint(
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+):
+    settings_val = get_settings()
+
+    # Surgical: clear api_key only — must not re-save auto_mode or other keys
+    from db.repositories.app_setting_repo import AppSettingRepository
+
+    repo = AppSettingRepository(session)
+    raw = await repo.get("model_settings", "")
+    if raw:
+        try:
+            stored = json.loads(raw)
+            stored.pop("api_key", None)
+            await repo.set("model_settings", json.dumps(stored) if stored else "")
+        except (ValueError, TypeError):
+            pass
+    await session.flush()
+    await session.commit()
+
+    model_settings = await get_model_settings(session)
+    effective_config = await get_effective_llm_config(session, settings_val)
+
+    context = {
+        "request": request,
+        "settings": model_settings,
+        "effective_config": effective_config,
+        "supported_providers": SUPPORTED_PROVIDERS,
+        "env_settings": settings_val,
+        "auth_status": get_auth_status(model_settings, settings_val),
+    }
+
+    return templates.TemplateResponse(
+        request=request,
+        name="admin/partials/_model_settings.html",
+        context=context,
+        headers={"HX-Trigger": '{"showToast": "API key cleared from database"}'},
+    )
+
+
+@router.post("/tasks/{stable_id}/retry")
 async def retry_task(
     stable_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
@@ -100,7 +300,7 @@ async def retry_task(
         )
 
 
-@router.post("/{stable_id}/reclassify")
+@router.post("/tasks/{stable_id}/reclassify")
 async def reclassify_task(
     stable_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
@@ -121,12 +321,8 @@ async def reclassify_task(
         project_repo = ProjectRepository(session)
         active_projects = await project_repo.list_active()
 
-        llm_svc = LLMService(
-            provider=settings.llm_provider,
-            model=settings.llm_model,
-            api_key=settings.llm_api_key,
-            base_url=settings.llm_base_url,
-        )
+        llm_config = await get_effective_llm_config(session, settings)
+        llm_svc = LLMService.from_effective_config(llm_config)
         routing_svc = ProjectRoutingService()
         alias_repo = ProjectAliasRepo(session)
         classification_svc = ClassificationService(
@@ -173,7 +369,7 @@ async def reclassify_task(
         )
 
 
-@router.post("/{stable_id}/resend")
+@router.post("/tasks/{stable_id}/resend")
 async def resend_proposal(
     stable_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
@@ -255,7 +451,7 @@ async def resend_proposal(
         )
 
 
-@router.post("/{stable_id}/rewrite")
+@router.post("/tasks/{stable_id}/rewrite")
 async def rewrite_task_title(
     stable_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
@@ -273,12 +469,8 @@ async def rewrite_task_title(
         if not raw_text:
             raise HTTPException(status_code=400, detail="No raw text found for task")
 
-        llm_svc = LLMService(
-            provider=settings.llm_provider,
-            model=settings.llm_model,
-            api_key=settings.llm_api_key,
-            base_url=settings.llm_base_url,
-        )
+        llm_config = await get_effective_llm_config(session, settings)
+        llm_svc = LLMService.from_effective_config(llm_config)
         rewritten = await llm_svc.rewrite_title(raw_text)
 
         google_svc = GoogleTasksService(settings.google_credentials_file)
@@ -314,7 +506,7 @@ async def rewrite_task_title(
         )
 
 
-@router.post("/import-from-google")
+@router.post("/tasks/import-from-google")
 async def import_tasks_from_google(
     request: Request,
     session: AsyncSession = Depends(get_session),
@@ -418,7 +610,7 @@ async def import_tasks_from_google(
         )
 
 
-@router.post("/{stable_id}/edit")
+@router.post("/tasks/{stable_id}/edit")
 async def edit_task(
     stable_id: uuid.UUID,
     normalized_title: str = Form(""),
@@ -521,7 +713,7 @@ async def edit_task(
         )
 
 
-@router.post("/{stable_id}/rollback/{revision_id}")
+@router.post("/tasks/{stable_id}/rollback/{revision_id}")
 async def rollback_task(
     stable_id: uuid.UUID,
     revision_id: uuid.UUID,
@@ -579,7 +771,7 @@ async def rollback_task(
         )
 
 
-@router.get("/processing/queue")
+@router.get("/tasks/processing/queue")
 async def get_processing_queue(
     session: AsyncSession = Depends(get_session),
 ) -> JSONResponse:
@@ -614,7 +806,7 @@ async def get_processing_queue(
     )
 
 
-@router.post("/processing/reprocess/{source_task_id}")
+@router.post("/tasks/processing/reprocess/{source_task_id}")
 async def reprocess_source_task(
     source_task_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),

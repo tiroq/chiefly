@@ -222,6 +222,11 @@ def settings_keyboard(settings: dict[str, bool | int]) -> InlineKeyboardMarkup:
                 )
             ],
             [_toggle("show_steps_auto", "Show steps auto", settings.get("show_steps_auto", False))],
+            [
+                InlineKeyboardButton(
+                    text="🔌 Test LLM Connection", callback_data="settings:test_llm"
+                )
+            ],
             [InlineKeyboardButton(text="↩️ Back", callback_data="settings:close")],
         ]
     )

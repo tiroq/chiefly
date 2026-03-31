@@ -19,6 +19,12 @@ from apps.api.services.google_tasks_service import GoogleTasksService
 from apps.api.services.project_sync_service import ProjectSyncService
 from apps.api.services.prompt_versioning_service import PromptVersioningService
 from apps.api.services.system_event_service import SystemEventService
+from apps.api.services.model_settings_service import (
+    get_auth_status,
+    get_model_settings,
+    get_effective_llm_config,
+    SUPPORTED_PROVIDERS,
+)
 from db.models.project_alias import ProjectAlias
 from db.models.project_prompt_version import ProjectPromptVersion
 from db.repositories.project_alias_repo import ProjectAliasRepo
@@ -59,6 +65,34 @@ async def admin_dashboard(
         )
     return templates.TemplateResponse(
         request=request, name="admin/pages/dashboard.html", context=context
+    )
+
+
+@router.get("/model-settings")
+async def admin_model_settings(
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+):
+    settings_val = get_settings()
+    model_settings = await get_model_settings(session)
+    effective_config = await get_effective_llm_config(session, settings_val)
+
+    context = {
+        "request": request,
+        "settings": model_settings,
+        "effective_config": effective_config,
+        "supported_providers": SUPPORTED_PROVIDERS,
+        "env_settings": settings_val,
+        "auth_status": get_auth_status(model_settings, settings_val),
+        "title": "Model Settings",
+    }
+
+    if is_htmx(request) and not is_htmx_boosted(request):
+        return templates.TemplateResponse(
+            request=request, name="admin/partials/_model_settings.html", context=context
+        )
+    return templates.TemplateResponse(
+        request=request, name="admin/pages/model_settings.html", context=context
     )
 
 
@@ -120,7 +154,7 @@ async def sync_projects(
     projects_svc = AdminProjectsService(project_repo, alias_repo)
     prompt_svc = PromptVersioningService(version_repo, event_repo)
 
-    result = await svc.list_projects(session)
+    result = await projects_svc.list_projects(session)
 
     # Fetch active prompt versions for each project
     for item in result.items:
@@ -638,6 +672,7 @@ async def generate_project_description(
     session: AsyncSession = Depends(get_session),
 ):
     from apps.api.services.llm_service import LLMService
+    from apps.api.services.model_settings_service import get_effective_llm_config
     from apps.api.services.prompt_versioning_service import PromptVersioningService
 
     settings_val = get_settings()
@@ -660,12 +695,8 @@ async def generate_project_description(
             )
         return RedirectResponse(f"/admin/projects/{project_id}?msg=No+tasks+found", status_code=303)
 
-    llm_svc = LLMService(
-        provider=settings_val.llm_provider,
-        model=settings_val.llm_model,
-        api_key=settings_val.llm_api_key,
-        base_url=settings_val.llm_base_url,
-    )
+    llm_config = await get_effective_llm_config(session, settings_val)
+    llm_svc = LLMService.from_effective_config(llm_config)
     generated = await llm_svc.generate_project_description(project.name, sample_titles)
     description_text = generated.get("description")
     description_value = description_text if isinstance(description_text, str) else ""

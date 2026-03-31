@@ -8,6 +8,7 @@ from apps.api.logging import get_logger
 from apps.api.services.classification_service import ClassificationService
 from apps.api.services.google_tasks_service import GoogleTasksService
 from apps.api.services.llm_service import LLMService
+from apps.api.services.model_settings_service import get_effective_llm_config
 from apps.api.services.project_routing_service import ProjectRoutingService
 from apps.api.services.revision_service import RevisionService
 from apps.api.services.telegram_service import TelegramService
@@ -184,9 +185,8 @@ async def _process_entry(
     raw_description = user_notes or source_task.notes_raw or ""
 
     # --- Phase 3c: LLM Classification ---
-    llm = LLMService(
-        settings.llm_provider, settings.llm_model, settings.llm_api_key, settings.llm_base_url
-    )
+    llm_config = await get_effective_llm_config(session, settings)
+    llm = LLMService.from_effective_config(llm_config)
     routing = ProjectRoutingService()
     classification_svc = ClassificationService(llm, routing, alias_repo=alias_repo)
     projects = await project_repo.list_active()

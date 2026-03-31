@@ -28,6 +28,14 @@ class Settings(BaseSettings):
     llm_api_key: str = ""
     llm_base_url: str = ""
 
+    # Multi-model support: when llm_auto_mode is True, different pipeline
+    # steps can use different models (fast for normalize, quality for classify).
+    # When False (default), all steps use llm_model — zero behavior change.
+    llm_fast_model: str = ""
+    llm_quality_model: str = ""
+    llm_fallback_model: str = ""
+    llm_auto_mode: bool = False
+
     sync_interval_seconds: int = 60
 
     # Backward-compatible aliases

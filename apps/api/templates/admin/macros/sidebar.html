@@ -15,6 +15,9 @@
   <li class="{{ 'active' if '/admin/events' in request.url.path else '' }}">
     <a href="/admin/events" hx-boost="true">Events</a>
   </li>
+  <li class="{{ 'active' if '/admin/model-settings' in request.url.path else '' }}">
+    <a href="/admin/model-settings" hx-boost="true">Model Settings</a>
+  </li>
 </ul>
 <div class="sidebar-footer">
   <form method="post" action="/admin/logout">

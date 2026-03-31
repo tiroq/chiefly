@@ -1,0 +1,129 @@
+<div id="model-settings-container">
+<div class="dashboard-header" style="margin-bottom: 2rem;">
+  <h1 style="font-size: 1.5rem; font-weight: 600; color: var(--color-text);">Model Settings</h1>
+</div>
+
+<div class="card" style="margin-bottom: 2rem;">
+  <h2 style="margin-top: 0; margin-bottom: 1rem; font-size: 1.25rem;">Current Effective Configuration</h2>
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+    <div>
+      <strong>Provider:</strong> <span class="badge badge-info">{{ effective_config.provider }}</span>
+    </div>
+    <div>
+      <strong>Model:</strong> <span class="text-muted">{{ effective_config.model }}</span>
+    </div>
+    <div>
+      <strong>Auto Mode:</strong> 
+      {% if effective_config.auto_mode %}
+        <span class="badge badge-completed">Enabled</span>
+      {% else %}
+        <span class="badge badge-discarded">Disabled</span>
+      {% endif %}
+    </div>
+    {% if effective_config.base_url %}
+    <div>
+      <strong>Base URL:</strong> <span class="text-muted">{{ effective_config.base_url }}</span>
+    </div>
+    {% endif %}
+    <div>
+      <strong>Auth Status:</strong>
+      {% if auth_status.configured == "true" %}
+        <span class="badge badge-completed">Configured</span>
+        <span class="text-muted" style="font-size: 0.85rem;">({{ auth_status.source }}: {{ auth_status.masked_key }})</span>
+      {% else %}
+        <span class="badge badge-discarded">Not configured</span>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h2 style="margin-top: 0; margin-bottom: 1rem; font-size: 1.25rem;">Edit Settings</h2>
+  <form id="settings-form" 
+        hx-post="/admin/api/model-settings/save" 
+        hx-target="#model-settings-container" 
+        hx-swap="outerHTML"
+        style="display: flex; flex-direction: column; gap: 1rem;">
+    
+    <div>
+      <label for="provider" style="display: block; margin-bottom: 0.25rem; font-weight: 500;">Provider</label>
+      <select id="provider" name="provider" style="width: 100%; padding: 0.5rem; border: 1px solid var(--color-border); border-radius: 4px; background-color: var(--color-bg);">
+        <option value="">-- Default ({{ env_settings.llm_provider }}) --</option>
+        {% for p in supported_providers %}
+          <option value="{{ p }}" {% if settings.provider == p %}selected{% endif %}>{{ p }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    
+    <div>
+      <label for="model" style="display: block; margin-bottom: 0.25rem; font-weight: 500;">Model</label>
+      <input type="text" id="model" name="model" value="{{ settings.model }}" placeholder="Default: {{ env_settings.llm_model }}" style="width: 100%; padding: 0.5rem; border: 1px solid var(--color-border); border-radius: 4px; background-color: var(--color-bg); color: var(--color-text);">
+    </div>
+    
+    <div>
+      <label for="api_key" style="display: block; margin-bottom: 0.25rem; font-weight: 500;">API Key</label>
+      <input type="password" id="api_key" name="api_key" 
+             placeholder="{% if settings.api_key %}••••{{ settings.api_key[-4:] }}{% else %}Leave blank to use environment variable{% endif %}" 
+             style="width: 100%; padding: 0.5rem; border: 1px solid var(--color-border); border-radius: 4px; background-color: var(--color-bg); color: var(--color-text);">
+      <p style="font-size: 0.8rem; color: var(--color-text-muted); margin-top: 0.25rem;">Leave blank to keep current key.</p>
+    </div>
+    
+    <div>
+      <label for="base_url" style="display: block; margin-bottom: 0.25rem; font-weight: 500;">Base URL (Optional)</label>
+      <input type="text" id="base_url" name="base_url" value="{{ settings.base_url }}" placeholder="Default: {{ env_settings.llm_base_url or 'None' }}" style="width: 100%; padding: 0.5rem; border: 1px solid var(--color-border); border-radius: 4px; background-color: var(--color-bg); color: var(--color-text);">
+    </div>
+    
+    <div style="display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem;">
+      <input type="checkbox" id="auto_mode" name="auto_mode" value="true" {% if settings.auto_mode %}checked{% endif %} onchange="document.getElementById('tier-models').style.display = this.checked ? 'flex' : 'none';">
+      <label for="auto_mode" style="font-weight: 500; cursor: pointer;">Enable Auto Mode (Tiered Models)</label>
+    </div>
+    
+    <div id="tier-models" style="display: {% if settings.auto_mode %}flex{% else %}none{% endif %}; flex-direction: column; gap: 1rem; padding: 1rem; background-color: rgba(0,0,0,0.02); border: 1px solid var(--color-border); border-radius: 4px; margin-top: 0.5rem;">
+      <div>
+        <label for="fast_model" style="display: block; margin-bottom: 0.25rem; font-weight: 500;">Fast Model</label>
+        <input type="text" id="fast_model" name="fast_model" value="{{ settings.fast_model }}" placeholder="Default: {{ env_settings.llm_fast_model }}" style="width: 100%; padding: 0.5rem; border: 1px solid var(--color-border); border-radius: 4px; background-color: var(--color-bg); color: var(--color-text);">
+      </div>
+      
+      <div>
+        <label for="quality_model" style="display: block; margin-bottom: 0.25rem; font-weight: 500;">Quality Model</label>
+        <input type="text" id="quality_model" name="quality_model" value="{{ settings.quality_model }}" placeholder="Default: {{ env_settings.llm_quality_model }}" style="width: 100%; padding: 0.5rem; border: 1px solid var(--color-border); border-radius: 4px; background-color: var(--color-bg); color: var(--color-text);">
+      </div>
+    </div>
+    
+    <div>
+      <label for="fallback_model" style="display: block; margin-bottom: 0.25rem; font-weight: 500;">Fallback Model</label>
+      <input type="text" id="fallback_model" name="fallback_model" value="{{ settings.fallback_model }}" placeholder="Default: {{ env_settings.llm_fallback_model }}" style="width: 100%; padding: 0.5rem; border: 1px solid var(--color-border); border-radius: 4px; background-color: var(--color-bg); color: var(--color-text);">
+      <p style="font-size: 0.8rem; color: var(--color-text-muted); margin-top: 0.25rem;">Used when the primary model fails. Works independently of auto mode.</p>
+    </div>
+    
+    <div style="display: flex; gap: 1rem; margin-top: 1rem; align-items: center;">
+      <button type="submit" class="btn btn-primary">Save Settings</button>
+      
+      <button type="button" class="btn btn-secondary" 
+              hx-post="/admin/api/model-settings/test" 
+              hx-include="#settings-form"
+              hx-swap="none">
+        Test Connection
+      </button>
+      
+      <div style="flex-grow: 1;"></div>
+      
+      <button type="button" class="btn btn-secondary" style="border-color: var(--color-warning, #e67e22); color: var(--color-warning, #e67e22);"
+              hx-post="/admin/api/model-settings/reset-auth" 
+              hx-target="#model-settings-container" 
+              hx-swap="outerHTML"
+              hx-confirm="Clear the API key stored in the database? The environment variable key (if any) will still be used.">
+        Reset Auth
+      </button>
+      
+      <button type="button" class="btn btn-danger" style="background-color: var(--color-danger); color: white; border: none; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer;"
+              hx-post="/admin/api/model-settings/reset" 
+              hx-target="#model-settings-container" 
+              hx-swap="outerHTML"
+              hx-confirm="Reset all model settings to defaults?">
+        Reset to Defaults
+      </button>
+    </div>
+  </form>
+</div>
+</div>
