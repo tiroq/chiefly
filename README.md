@@ -26,6 +26,8 @@ You dump anything into a Google Tasks list called **Inbox** — rough notes, voi
 - ✅ Background scheduler (APScheduler)
 - ✅ Postgres with Alembic migrations
 - ✅ pytest tests for state machine, routing, LLM schema, intake flow, callbacks, daily review
+- ✅ Telegram Mini App (React SPA) for rich task review/editing
+- ✅ Admin panel split to internal-only port (8001)
 
 ---
 
@@ -33,8 +35,8 @@ You dump anything into a Google Tasks list called **Inbox** — rough notes, voi
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                      FastAPI App                        │
-│  /health  /telegram/webhook  /admin                     │
+│                  Public App (:8000)                      │
+│  /health  /telegram/webhook  /api/app/*  /app/*         │
 └────────────────────────┬────────────────────────────────┘
                          │
               ┌──────────┴──────────┐
@@ -53,11 +55,13 @@ You dump anything into a Google Tasks list called **Inbox** — rough notes, voi
         └────────────────┼────────────────┘
                          ▼
               ┌──────────────────────┐
-              │  ClassificationSvc  │  LLM + routing
-              │  ReviewQueueService │  Telegram queue
-              │  ProjectRoutingSvc  │  Project matching
-              │  RevisionService    │  History
-              │  DailyReviewService │  Daily summary
+              │     Services         │
+              │  ClassificationSvc   │
+              │  ReviewQueueService  │
+              │  MiniAppReviewSvc    │
+              │  ProjectRoutingSvc   │
+              │  RevisionService     │
+              │  DailyReviewService  │
               └──────────┬───────────┘
                          │
               ┌──────────▼───────────┐
@@ -65,6 +69,11 @@ You dump anything into a Google Tasks list called **Inbox** — rough notes, voi
               │   SQLAlchemy 2.x     │
               │   Alembic Migrations │
               └──────────────────────┘
+
+┌─────────────────────────────────────────────────────────┐
+│                  Admin App (:8001)                       │
+│  /health  /admin/*  (internal only, not tunneled)       │
+└─────────────────────────────────────────────────────────┘
 ```
 
 ### Core Domain
@@ -123,6 +132,9 @@ cp .env.example .env
 | `SYNC_INTERVAL_SECONDS` | Sync polling interval in seconds (default: 60, replaces `INBOX_POLL_INTERVAL_SECONDS`) |
 | `DAILY_REVIEW_CRON` | Cron expression (default: `0 9 * * *`) |
 | `TIMEZONE` | Your timezone (e.g. `Europe/Moscow`) |
+| `ADMIN_HOST` | Admin app bind address (default: `127.0.0.1`) |
+| `ADMIN_PORT` | Admin app port (default: `8001`) |
+| `MINI_APP_URL` | Site origin for Mini App WebApp buttons (e.g. `https://chiefly.tiroq.dev`) |
 
 ### 3. Google Tasks Setup
 
@@ -236,6 +248,8 @@ make test-integration
 
 ## Admin Endpoints
 
+Admin panel runs on port 8001 (internal only). See [Deployment](docs/DEPLOYMENT.md).
+
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/health/live` | Liveness check |
@@ -266,12 +280,30 @@ make test-integration
 
 ---
 
+## Telegram Mini App
+
+Chiefly includes a React SPA served at `/app/` on port 8000. It provides a richer interface for task review and editing compared to inline Telegram buttons.
+
+**Screens:**
+- Review Queue — filterable list of pending tasks
+- Task Review/Edit — full editing with project picker, type picker, inline title edit
+- Settings — toggle preferences
+- Projects — read-only project list
+
+**Integration:**
+- Proposal cards include an "Open in App" WebApp button
+- Settings command includes an "Open Settings in App" WebApp button
+- Actions taken in the Mini App update the original Telegram message
+
+**Configuration:** Set `MINI_APP_URL` to the site origin (e.g., `https://chiefly.tiroq.dev`). The code appends `/app/...` paths automatically.
+
+---
+
 ## Future Roadmap
 
 - [ ] OAuth2 Google auth (instead of service account)
 - [ ] Google Calendar integration for scheduling tasks
 - [ ] Multi-user support
-- [ ] Web dashboard (read-only)
 - [ ] Voice message intake via Telegram
 - [ ] Notion / Linear integration as alternative backends
 - [ ] LLM streaming response
