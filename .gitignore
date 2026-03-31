@@ -51,3 +51,4 @@ credentials/
 # Docker volumes
 postgres_data/
 *.json
+apps/miniapp/node_modules/
