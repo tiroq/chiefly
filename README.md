@@ -18,7 +18,7 @@ You dump anything into a Google Tasks list called **Inbox** — rough notes, voi
 - ✅ Detect new unprocessed tasks (idempotent)
 - ✅ LLM classification (kind, title, project, next action, substeps)
 - ✅ Telegram proposal card with inline action buttons
-- ✅ User actions: Confirm / Edit / Change Project / Change Type / Show Steps / Discard
+- ✅ User actions: Confirm / Discard / Skip (bot) + Edit / Change Project / Change Type (Mini App)
 - ✅ On confirm: move task to correct Google Tasks list, patch title
 - ✅ Full revision history per task
 - ✅ Daily review summary sent via Telegram
@@ -78,13 +78,13 @@ You dump anything into a Google Tasks list called **Inbox** — rough notes, voi
 
 ### Core Domain
 
-| Enum | Values |
-|------|--------|
-| `TaskKind` | TASK, WAITING, COMMITMENT, IDEA, REFERENCE |
-| `LegacyTaskStatus` | NEW → PROPOSED → CONFIRMED → ROUTED → COMPLETED / DISCARDED / ERROR |
-| `ReviewAction` | CONFIRM, EDIT, CHANGE_PROJECT, CHANGE_TYPE, DISCARD, SHOW_STEPS |
-| `ProjectType` | CLIENT, PERSONAL, FAMILY, OPS, WRITING, INTERNAL |
-| `ConfidenceBand` | LOW, MEDIUM, HIGH |
+| Enum | Values | Scope |
+|------|--------|-------|
+| `TaskKind` | TASK, WAITING, COMMITMENT, IDEA, REFERENCE | Shared domain model |
+| `LegacyTaskStatus` | NEW → PROPOSED → CONFIRMED → ROUTED → COMPLETED / DISCARDED / ERROR | Legacy workflow tracking |
+| `ReviewAction` | CONFIRM, EDIT, CHANGE_PROJECT, CHANGE_TYPE, DISCARD, SHOW_STEPS, SKIP, CLARIFY, DRAFT_MESSAGE | Bot: CONFIRM, DISCARD, SKIP; Mini App only: EDIT, CHANGE_PROJECT, CHANGE_TYPE, SHOW_STEPS, CLARIFY, DRAFT_MESSAGE |
+| `ProjectType` | CLIENT, PERSONAL, FAMILY, OPS, WRITING, INTERNAL | Shared domain model |
+| `ConfidenceBand` | LOW, MEDIUM, HIGH | Shared domain model |
 
 ---
 
