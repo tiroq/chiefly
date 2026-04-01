@@ -67,7 +67,7 @@ services:
       --log-level debug
       --access-log
     ports:
-      - "127.0.0.1:${ADMIN_PORT:-8001}:8001"
+      - "${ADMIN_HOST:-127.0.0.1}:${ADMIN_PORT:-8001}:8001"
 
 volumes:
   postgres_data:
