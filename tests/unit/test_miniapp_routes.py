@@ -238,3 +238,47 @@ class TestMiniAppRoutes:
         assert resp.json()["batch_size"] == 10
         assert resp.json()["changes_only"] is True
         mock_save_user_settings.assert_awaited_once()
+
+    @patch("apps.api.miniapp.routes.ProjectRepository")
+    def test_update_project_type_success(self, mock_repo_cls, client: TestClient):
+        project_id = uuid.uuid4()
+        mock_project = MagicMock()
+        mock_project.project_type = "personal"
+        mock_repo = mock_repo_cls.return_value
+        mock_repo.get_by_id = AsyncMock(return_value=mock_project)
+        mock_repo.save = AsyncMock(return_value=mock_project)
+
+        resp = client.patch(
+            f"/api/app/projects/{project_id}",
+            json={"project_type": "family"},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json() == {"success": True, "message": "Project type updated"}
+        mock_repo.save.assert_awaited_once()
+
+    @patch("apps.api.miniapp.routes.ProjectRepository")
+    def test_update_project_type_invalid_type(self, mock_repo_cls, client: TestClient):
+        project_id = uuid.uuid4()
+
+        resp = client.patch(
+            f"/api/app/projects/{project_id}",
+            json={"project_type": "nonexistent"},
+        )
+
+        assert resp.status_code == 400
+        assert "Invalid project_type" in resp.json()["detail"]
+
+    @patch("apps.api.miniapp.routes.ProjectRepository")
+    def test_update_project_type_not_found(self, mock_repo_cls, client: TestClient):
+        project_id = uuid.uuid4()
+        mock_repo = mock_repo_cls.return_value
+        mock_repo.get_by_id = AsyncMock(return_value=None)
+
+        resp = client.patch(
+            f"/api/app/projects/{project_id}",
+            json={"project_type": "personal"},
+        )
+
+        assert resp.status_code == 404
+        assert resp.json()["detail"] == "Project not found"
