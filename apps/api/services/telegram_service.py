@@ -105,7 +105,6 @@ class TelegramService:
         classification: TaskClassificationResult,
         project_name: str | None,
         queue_position: int | None = None,
-        has_disambiguation: bool = False,
     ) -> int:
         """Send a task proposal card to Telegram with action buttons.
 
@@ -115,7 +114,6 @@ class TelegramService:
             classification: The LLM classification result.
             project_name: The name of the matched project.
             queue_position: Optional position in the review queue.
-            has_disambiguation: Whether to show disambiguation options.
 
         Returns:
             int: The ID of the sent Telegram message.
@@ -129,7 +127,7 @@ class TelegramService:
             queue_position=queue_position,
         )
         short_id = task_id.replace("-", "")
-        keyboard = proposal_keyboard(short_id, has_disambiguation=has_disambiguation)
+        keyboard = proposal_keyboard(short_id)
 
         try:
             bot = self._get_bot()
@@ -141,79 +139,6 @@ class TelegramService:
             return msg.message_id
         except Exception as e:
             raise TelegramError(f"Failed to send proposal: {e}") from e
-
-    async def send_project_picker(
-        self,
-        task_id: str,
-        projects: list[tuple[str, str]],
-        task_title: str | None = None,
-        current_project: str | None = None,
-        suggested_project: str | None = None,
-    ) -> int:
-        """Send a project selection menu to Telegram.
-
-        Args:
-            task_id: The stable ID of the task.
-            projects: List of (name, slug) tuples for available projects.
-            task_title: Optional title of the task for context.
-            current_project: The currently assigned project name.
-            suggested_project: The project name suggested by LLM.
-
-        Returns:
-            int: The ID of the sent Telegram message.
-        """
-        from apps.api.telegram.keyboards import project_picker_keyboard
-
-        short_id = task_id.replace("-", "")
-        lines = ["📁 <b>Select a project:</b>"]
-        if task_title:
-            lines.append(f"\nTask: <i>{html.escape(task_title)}</i>")
-        if current_project:
-            lines.append(f"Current: <b>{html.escape(current_project)}</b>")
-        if suggested_project:
-            lines.append(f"Suggested: {html.escape(suggested_project)}")
-        text = "\n".join(lines)
-
-        projects_with_desc: list[tuple[str, str, str | None]] = [
-            (name, slug, None) for name, slug in projects
-        ]
-        keyboard = project_picker_keyboard(
-            short_id, projects_with_desc, current_project, suggested_project
-        )
-        try:
-            bot = self._get_bot()
-            msg = await bot.send_message(
-                chat_id=self._chat_id,
-                text=text,
-                reply_markup=keyboard,
-            )
-            return msg.message_id
-        except Exception as e:
-            raise TelegramError(f"Failed to send project picker: {e}") from e
-
-    async def send_kind_picker(self, task_id: str) -> int:
-        """Send a task type (kind) selection menu to Telegram.
-
-        Args:
-            task_id: The stable ID of the task.
-
-        Returns:
-            int: The ID of the sent Telegram message.
-        """
-        from apps.api.telegram.keyboards import kind_picker_keyboard
-
-        short_id = task_id.replace("-", "")
-        keyboard = kind_picker_keyboard(short_id)
-        try:
-            bot = self._get_bot()
-            msg = await bot.send_message(
-                chat_id=self._chat_id,
-                text="Select task type:",
-                reply_markup=keyboard,
-            )
-            return msg.message_id
-        except Exception as e:
-            raise TelegramError(f"Failed to send kind picker: {e}") from e
 
     async def send_text(self, text: str) -> int:
         """Send a plain text message to the configured Telegram chat.

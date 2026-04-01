@@ -421,9 +421,6 @@ async def resend_proposal(
                 raw_text=raw_text,
                 classification=classification,
                 project_name=project_name,
-                has_disambiguation=bool(
-                    latest_revision.proposal_json.get("disambiguation_options")
-                ),
             )
         finally:
             await telegram_svc.aclose()

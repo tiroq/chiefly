@@ -111,7 +111,6 @@ class ReviewQueueService:
                 classification=classification,
                 project_name=proposed.get("project_name"),
                 queue_position=1,
-                has_disambiguation=bool(proposed.get("disambiguation_options")),
             )
         except Exception:
             next_item.status = "send_failed"

@@ -24,7 +24,7 @@ from db.repositories.task_snapshot_repo import TaskSnapshotRepository
 
 logger = get_logger(__name__)
 
-_REVIEWABLE_STATUSES = ["queued", "pending", "awaiting_edit"]
+_REVIEWABLE_STATUSES = ["queued", "pending"]
 
 
 class QueueItemData(TypedDict):
@@ -85,7 +85,7 @@ class MiniAppReviewService:
         sessions = list(result.scalars().all())
 
         queued_count = sum(1 for rs in sessions if rs.status == "queued")
-        pending_count = sum(1 for rs in sessions if rs.status in {"pending", "awaiting_edit"})
+        pending_count = sum(1 for rs in sessions if rs.status == "pending")
         counts: QueueCounts = {
             "total": queued_count + pending_count,
             "queued": queued_count,
@@ -96,7 +96,7 @@ class MiniAppReviewService:
         if status_filter == "queued":
             filtered = [rs for rs in sessions if rs.status == "queued"]
         elif status_filter == "pending":
-            filtered = [rs for rs in sessions if rs.status in {"pending", "awaiting_edit"}]
+            filtered = [rs for rs in sessions if rs.status == "pending"]
         elif status_filter == "ambiguous":
             filtered = [
                 rs
@@ -438,6 +438,8 @@ class MiniAppReviewService:
 
         proposed["kind"] = selected_kind
         proposed["normalized_title"] = selected_title
+        proposed["ambiguities"] = []
+        proposed["disambiguation_options"] = []
         review_session.proposed_changes = proposed
         await self._session.flush()
         await self._session.commit()

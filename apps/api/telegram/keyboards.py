@@ -11,7 +11,7 @@ from aiogram.types import (
 )
 
 from apps.api.config import get_settings
-from core.domain.enums import ReviewAction, TaskKind
+from core.domain.enums import ReviewAction
 from core.schemas.telegram import CallbackPayload
 
 
@@ -43,7 +43,7 @@ def queue_summary_keyboard() -> InlineKeyboardMarkup:
     )
 
 
-def proposal_keyboard(short_id: str, has_disambiguation: bool = False) -> InlineKeyboardMarkup:
+def proposal_keyboard(short_id: str) -> InlineKeyboardMarkup:
     def _btn(text: str, action: ReviewAction) -> InlineKeyboardButton:
         return InlineKeyboardButton(
             text=text,
@@ -53,32 +53,13 @@ def proposal_keyboard(short_id: str, has_disambiguation: bool = False) -> Inline
     rows: list[list[InlineKeyboardButton]] = [
         [
             _btn("✅ Confirm", ReviewAction.CONFIRM),
-            _btn("✏️ Edit Title", ReviewAction.EDIT),
-        ],
-        [
-            _btn("📁 Change Project", ReviewAction.CHANGE_PROJECT),
-            _btn("🔄 Change Type", ReviewAction.CHANGE_TYPE),
-        ],
-    ]
-    if has_disambiguation:
-        rows.append(
-            [
-                _btn("❓ Clarify", ReviewAction.CLARIFY),
-                _btn("📋 Show Steps", ReviewAction.SHOW_STEPS),
-            ]
-        )
-    rows.append(
-        [
-            _btn("💬 Draft Message", ReviewAction.DRAFT_MESSAGE),
             _btn("⏭ Skip", ReviewAction.SKIP),
-        ]
-    )
-    rows.append(
+        ],
         [
             _btn("🗑 Discard", ReviewAction.DISCARD),
             InlineKeyboardButton(text="⏸ Pause", callback_data="queue:pause"),
-        ]
-    )
+        ],
+    ]
 
     mini_app_url = get_settings().mini_app_url
     if mini_app_url:
@@ -108,95 +89,6 @@ def discard_confirm_keyboard(short_id: str) -> InlineKeyboardMarkup:
                     callback_data=f"discard_cancel:{short_id}",
                 ),
             ]
-        ]
-    )
-
-
-def kind_picker_keyboard(short_id: str) -> InlineKeyboardMarkup:
-    kind_descriptions = {
-        TaskKind.TASK: ("📋 Task", "something you should do"),
-        TaskKind.WAITING: ("⏳ Waiting", "something you are waiting for"),
-        TaskKind.COMMITMENT: ("🤝 Commitment", "something you promised"),
-        TaskKind.IDEA: ("💡 Idea", "not actionable yet"),
-        TaskKind.REFERENCE: ("📎 Reference", "informational only"),
-    }
-    buttons = []
-    for kind, (label, desc) in kind_descriptions.items():
-        buttons.append(
-            [
-                InlineKeyboardButton(
-                    text=f"{label} — {desc}",
-                    callback_data=f"kind:{short_id}:{kind.value}",
-                )
-            ]
-        )
-    buttons.append([InlineKeyboardButton(text="↩️ Back", callback_data=f"back_to_card:{short_id}")])
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
-
-
-def project_picker_keyboard(
-    short_id: str,
-    projects: list[tuple[str, str, str | None]],
-    current_project: str | None = None,
-    suggested_project: str | None = None,
-) -> InlineKeyboardMarkup:
-    buttons = []
-    for name, slug, description in projects:
-        label = name
-        if name == current_project:
-            label = f"✓ {name} (current)"
-        elif name == suggested_project:
-            label = f"★ {name}"
-        if description:
-            label = f"{label} — {description[:40]}"
-        buttons.append(
-            [
-                InlineKeyboardButton(
-                    text=label,
-                    callback_data=f"proj:{short_id}:{slug}",
-                )
-            ]
-        )
-    buttons.append([InlineKeyboardButton(text="↩️ Back", callback_data=f"back_to_card:{short_id}")])
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
-
-
-def disambiguation_keyboard(
-    short_id: str, options: list[tuple[str, str, int]]
-) -> InlineKeyboardMarkup:
-    buttons = []
-    for kind_value, title, idx in options:
-        label = f"{kind_value.capitalize()}: {title[:50]}"
-        buttons.append(
-            [
-                InlineKeyboardButton(
-                    text=label,
-                    callback_data=f"disambig:{short_id}:{idx}",
-                )
-            ]
-        )
-    buttons.append(
-        [
-            InlineKeyboardButton(text="✏️ Manual edit", callback_data=f"edit:{short_id}"),
-            InlineKeyboardButton(text="🗑 Discard", callback_data=f"discard:{short_id}"),
-        ]
-    )
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
-
-
-def draft_keyboard(short_id: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(text="✅ Use", callback_data=f"draft_use:{short_id}"),
-                InlineKeyboardButton(text="📏 Shorter", callback_data=f"draft_shorter:{short_id}"),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="👔 More Formal", callback_data=f"draft_formal:{short_id}"
-                ),
-                InlineKeyboardButton(text="↩️ Back", callback_data=f"back_to_card:{short_id}"),
-            ],
         ]
     )
 
