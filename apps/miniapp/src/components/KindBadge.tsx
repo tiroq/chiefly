@@ -1,26 +1,20 @@
+import { Badge } from "./ui/Badge";
+
 interface KindBadgeProps {
   kind: string;
 }
 
+const KIND_COLORS: Record<string, string> = {
+  TASK: "bg-blue-500/15 text-blue-400",
+  WAITING: "bg-purple-500/15 text-purple-400",
+  COMMITMENT: "bg-orange-500/15 text-orange-400",
+  IDEA: "bg-yellow-500/15 text-yellow-400",
+  REFERENCE: "bg-tg-hint/20 text-tg-hint",
+};
+
 export function KindBadge({ kind }: KindBadgeProps) {
   const normalized = kind.toUpperCase();
-  
-  let colorClass = "bg-tg-secondary-bg text-tg-hint";
-  if (normalized === "TASK") {
-    colorClass = "bg-blue-500/15 text-blue-400";
-  } else if (normalized === "WAITING") {
-    colorClass = "bg-purple-500/15 text-purple-400";
-  } else if (normalized === "COMMITMENT") {
-    colorClass = "bg-orange-500/15 text-orange-400";
-  } else if (normalized === "IDEA") {
-    colorClass = "bg-yellow-500/15 text-yellow-400";
-  } else if (normalized === "REFERENCE") {
-    colorClass = "bg-tg-hint/20 text-tg-hint";
-  }
+  const colorClass = KIND_COLORS[normalized] ?? "bg-tg-secondary-bg text-tg-hint";
 
-  return (
-    <span className={`px-2.5 py-1 text-[11px] font-medium rounded-full ${colorClass}`}>
-      {normalized}
-    </span>
-  );
+  return <Badge colorClass={colorClass}>{normalized}</Badge>;
 }

@@ -1,22 +1,18 @@
+import { Badge } from "./ui/Badge";
+
 interface ConfidenceBadgeProps {
   confidence: string;
 }
 
+const CONFIDENCE_COLORS: Record<string, string> = {
+  HIGH: "bg-green-500/15 text-green-400",
+  MEDIUM: "bg-amber-500/15 text-amber-400",
+  LOW: "bg-red-500/15 text-red-400",
+};
+
 export function ConfidenceBadge({ confidence }: ConfidenceBadgeProps) {
   const normalized = confidence.toUpperCase();
-  
-  let colorClass = "bg-tg-secondary-bg text-tg-hint";
-  if (normalized === "HIGH") {
-    colorClass = "bg-green-500/15 text-green-400";
-  } else if (normalized === "MEDIUM") {
-    colorClass = "bg-amber-500/15 text-amber-400";
-  } else if (normalized === "LOW") {
-    colorClass = "bg-red-500/15 text-red-400";
-  }
+  const colorClass = CONFIDENCE_COLORS[normalized] ?? "bg-tg-secondary-bg text-tg-hint";
 
-  return (
-    <span className={`px-2.5 py-1 text-[11px] font-medium rounded-full ${colorClass}`}>
-      {normalized}
-    </span>
-  );
+  return <Badge colorClass={colorClass}>{normalized}</Badge>;
 }

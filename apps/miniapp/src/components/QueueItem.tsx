@@ -1,6 +1,8 @@
 import { ReviewQueueItem } from "../api/client";
 import { ConfidenceBadge } from "./ConfidenceBadge";
 import { KindBadge } from "./KindBadge";
+import { Card } from "./ui/Card";
+import { Badge } from "./ui/Badge";
 
 interface QueueItemProps {
   item: ReviewQueueItem;
@@ -12,18 +14,13 @@ export function QueueItem({ item, onClick }: QueueItemProps) {
   const timeString = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
   return (
-    <div 
-      onClick={onClick}
-      className="bg-tg-section-bg rounded-2xl p-4 mb-3 active:scale-[0.98] transition-transform cursor-pointer"
-    >
+    <Card interactive onClick={onClick} className="mb-3">
       <div className="flex justify-between items-start mb-2">
         <div className="flex gap-2 flex-wrap">
           <KindBadge kind={item.kind} />
           <ConfidenceBadge confidence={item.confidence} />
           {item.has_ambiguity && (
-            <span className="px-2.5 py-1 text-[11px] font-medium rounded-full bg-red-500/15 text-red-400">
-              AMBIGUOUS
-            </span>
+            <Badge colorClass="bg-red-500/15 text-red-400">AMBIGUOUS</Badge>
           )}
         </div>
         <span className="text-tg-hint text-xs">{timeString}</span>
@@ -43,6 +40,6 @@ export function QueueItem({ item, onClick }: QueueItemProps) {
         </svg>
         {item.project_name || "Inbox"}
       </div>
-    </div>
+    </Card>
   );
 }

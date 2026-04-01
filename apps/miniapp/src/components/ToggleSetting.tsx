@@ -1,16 +1,17 @@
+import { ListRow } from "./ui/ListRow";
+
 interface ToggleSettingProps {
   label: string;
   description: string;
   checked: boolean;
   onChange: (checked: boolean) => void;
+  /** Pass false for the last row in a group to remove the border */
+  border?: boolean;
 }
 
-export function ToggleSetting({ label, description, checked, onChange }: ToggleSettingProps) {
+export function ToggleSetting({ label, description, checked, onChange, border = true }: ToggleSettingProps) {
   return (
-    <div 
-      className="flex items-center justify-between py-3 px-4 bg-tg-section-bg border-b border-tg-secondary-bg last:border-b-0 active:bg-tg-secondary-bg transition-colors cursor-pointer"
-      onClick={() => onChange(!checked)}
-    >
+    <ListRow onClick={() => onChange(!checked)} border={border}>
       <div className="flex-1 pr-4">
         <div className="text-sm font-medium text-tg-text">{label}</div>
         <div className="text-xs text-tg-hint">{description}</div>
@@ -23,6 +24,6 @@ export function ToggleSetting({ label, description, checked, onChange }: ToggleS
           />
         </div>
       </div>
-    </div>
+    </ListRow>
   );
 }
