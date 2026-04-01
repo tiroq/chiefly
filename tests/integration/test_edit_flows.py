@@ -102,12 +102,11 @@ async def test_edit_title_creates_revision(db_session, task_with_session):
     session_repo = ReviewSessionRepository(db_session)
     revision_svc = RevisionService(db_session)
 
-    # Simulate the edit flow: mark session as awaiting_edit, then apply title
-    review_session.status = "awaiting_edit"
+    review_session.status = "pending"
     await session_repo.save(review_session)
     active_session = await session_repo.get_active_by_stable_id(task.stable_id)
     assert active_session is not None
-    assert active_session.status == "awaiting_edit"
+    assert active_session.status == "pending"
 
     new_title = "Updated Title After Edit"
 

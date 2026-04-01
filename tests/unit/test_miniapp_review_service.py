@@ -34,7 +34,7 @@ class TestMiniAppReviewServiceQueue:
             ),
             SimpleNamespace(
                 stable_id=uuid.uuid4(),
-                status="awaiting_edit",
+                status="pending",
                 proposed_changes={"normalized_title": "Plan", "kind": "idea"},
                 created_at=datetime.now(timezone.utc),
             ),
@@ -293,3 +293,37 @@ class TestMiniAppReviewServiceEdits:
         assert isinstance(proposed, dict)
         assert proposed["kind"] == "idea"
         assert proposed["normalized_title"] == "Build startup"
+        assert proposed["ambiguities"] == []
+        assert proposed["disambiguation_options"] == []
+
+    @patch.object(MiniAppReviewService, "_get_review_session_for_action", new_callable=AsyncMock)
+    @pytest.mark.asyncio
+    async def test_resolve_ambiguity_clears_ambiguity_metadata(self, mock_get_review_session):
+        review_session = SimpleNamespace(
+            proposed_changes={
+                "normalized_title": "Original",
+                "kind": "task",
+                "ambiguities": ["Could be a project or a task"],
+                "disambiguation_options": [
+                    {"kind": "idea", "title": "Build startup"},
+                    {"kind": "task", "title": "Buy milk"},
+                ],
+            }
+        )
+        mock_get_review_session.return_value = review_session
+        session = MagicMock()
+        session.flush = AsyncMock()
+        session.commit = AsyncMock()
+        service = MiniAppReviewService(session)
+
+        result = await service.resolve_ambiguity(uuid.uuid4(), 1)
+
+        assert result["success"] is True
+        proposed = result.get("proposed_changes")
+        assert isinstance(proposed, dict)
+        assert proposed["kind"] == "task"
+        assert proposed["normalized_title"] == "Buy milk"
+        assert proposed["ambiguities"] == [], "Ambiguities should be cleared after resolution"
+        assert proposed["disambiguation_options"] == [], (
+            "Options should be cleared after resolution"
+        )

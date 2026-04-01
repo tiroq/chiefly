@@ -7,14 +7,11 @@ import pytest
 from aiogram.types import Message
 
 from apps.api.telegram.callbacks import (
-    handle_clarify,
-    handle_edit,
     handle_queue_start,
     handle_setting_toggle,
     handle_skip,
     handle_test_llm_connection,
 )
-from apps.api.telegram.states import ReviewStates
 
 
 def _mock_async_session_cm():
@@ -58,61 +55,6 @@ async def test_skip_marks_session_skipped_and_sends_next():
     assert review_session.status == "skipped"
     callback.answer.assert_awaited_once_with("⏭ Skipped.")
     queue_svc.send_next.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_clarify_shows_disambiguation_keyboard():
-    message = MagicMock(spec=Message)
-    message.edit_text = AsyncMock()
-    callback = SimpleNamespace(data="clarify:abc123", message=message, answer=AsyncMock())
-
-    review_session = SimpleNamespace(
-        proposed_changes={
-            "disambiguation_options": [
-                {"kind": "task", "title": "Buy milk"},
-                {"kind": "idea", "title": "Plan startup"},
-            ]
-        }
-    )
-
-    cm_session = _mock_async_session_cm()
-    factory = MagicMock(return_value=cm_session)
-
-    with (
-        patch("apps.api.telegram.callbacks.get_session_factory", return_value=factory),
-        patch("apps.api.telegram.callbacks._get_review_session", return_value=review_session),
-    ):
-        await handle_clarify(callback)
-
-    message.edit_text.assert_awaited_once()
-    kwargs = message.edit_text.await_args.kwargs
-    assert kwargs["reply_markup"].inline_keyboard[0][0].callback_data == "disambig:abc123:0"
-    assert kwargs["reply_markup"].inline_keyboard[1][0].callback_data == "disambig:abc123:1"
-
-
-@pytest.mark.asyncio
-async def test_edit_sets_fsm_state():
-    message = MagicMock(spec=Message)
-    callback = SimpleNamespace(data="edit:abc123", message=message, answer=AsyncMock())
-    state = MagicMock()
-    state.set_state = AsyncMock()
-    state.update_data = AsyncMock()
-
-    review_session = SimpleNamespace(status="queued")
-    cm_session = _mock_async_session_cm()
-    factory = MagicMock(return_value=cm_session)
-    session_repo = MagicMock()
-    session_repo.save = AsyncMock()
-
-    with (
-        patch("apps.api.telegram.callbacks.get_session_factory", return_value=factory),
-        patch("apps.api.telegram.callbacks.ReviewSessionRepository", return_value=session_repo),
-        patch("apps.api.telegram.callbacks._get_review_session", return_value=review_session),
-    ):
-        await handle_edit(callback, state)
-
-    state.set_state.assert_awaited_once_with(ReviewStates.awaiting_title_edit)
-    state.update_data.assert_awaited_once_with(task_id="abc123")
 
 
 @pytest.mark.asyncio

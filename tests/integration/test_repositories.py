@@ -383,33 +383,6 @@ class TestReviewSessionRepository:
         active = await repo.get_active_by_stable_id(task.stable_id)
         assert active is None
 
-    @pytest.mark.asyncio
-    async def test_get_pending_edit_by_chat(self, db_session):
-        from db.repositories.review_session_repo import ReviewSessionRepository
-
-        task = TaskRecord(stable_id=uuid.uuid4())
-        db_session.add(task)
-        await db_session.flush()
-
-        repo = ReviewSessionRepository(db_session)
-        session_obj = TelegramReviewSession(
-            id=uuid.uuid4(),
-            stable_id=task.stable_id,
-            telegram_chat_id="chat-789",
-            telegram_message_id=1,
-            status="awaiting_edit",
-        )
-        await repo.create(session_obj)
-        await db_session.commit()
-
-        pending = await repo.get_pending_edit_by_chat("chat-789")
-        assert pending is not None
-        assert pending.stable_id == task.stable_id
-
-        # Different chat should return None
-        other = await repo.get_pending_edit_by_chat("chat-other")
-        assert other is None
-
 
 class TestDailyReviewRepository:
     @pytest.mark.asyncio

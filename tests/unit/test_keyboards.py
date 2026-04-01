@@ -1,16 +1,22 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+from unittest.mock import patch
+
 from apps.api.telegram.keyboards import (
-    disambiguation_keyboard,
     discard_confirm_keyboard,
-    draft_keyboard,
-    kind_picker_keyboard,
     main_menu_keyboard,
-    project_picker_keyboard,
     proposal_keyboard,
     settings_keyboard,
 )
-from core.domain.enums import TaskKind
+
+
+def _proposal_kb(short_id: str):
+    with patch(
+        "apps.api.telegram.keyboards.get_settings",
+        return_value=SimpleNamespace(mini_app_url=None),
+    ):
+        return proposal_keyboard(short_id)
 
 
 class TestMainMenuKeyboard:
@@ -40,108 +46,45 @@ class TestMainMenuKeyboard:
 
 
 class TestProposalKeyboard:
-    def test_has_4_rows_without_disambiguation(self):
-        kb = proposal_keyboard("abc123")
-        assert len(kb.inline_keyboard) == 4
-
-    def test_has_5_rows_with_disambiguation(self):
-        kb = proposal_keyboard("abc123", has_disambiguation=True)
-        assert len(kb.inline_keyboard) == 5
+    def test_has_2_rows(self):
+        kb = _proposal_kb("abc123")
+        assert len(kb.inline_keyboard) == 2
 
     def test_confirm_callback_data(self):
-        kb = proposal_keyboard("abc123")
+        kb = _proposal_kb("abc123")
         assert kb.inline_keyboard[0][0].callback_data == "confirm:abc123"
 
     def test_contains_all_actions(self):
         short_id = "abc123"
-        kb = proposal_keyboard(short_id)
+        kb = _proposal_kb(short_id)
         callbacks = {button.callback_data for row in kb.inline_keyboard for button in row}
         assert {
             f"confirm:{short_id}",
-            f"edit:{short_id}",
-            f"change_project:{short_id}",
-            f"change_type:{short_id}",
-            f"draft_message:{short_id}",
             f"skip:{short_id}",
             f"discard:{short_id}",
         }.issubset(callbacks)
-
-    def test_contains_clarify_only_when_disambiguation_present(self):
-        short_id = "abc123"
-        kb = proposal_keyboard(short_id, has_disambiguation=True)
-        callbacks = {button.callback_data for row in kb.inline_keyboard for button in row}
-        assert {f"clarify:{short_id}", f"show_steps:{short_id}"}.issubset(callbacks)
+        assert "queue:pause" in callbacks
 
     def test_pause_button_present(self):
-        kb = proposal_keyboard("abc123")
+        kb = _proposal_kb("abc123")
         callbacks = [button.callback_data for row in kb.inline_keyboard for button in row]
         assert "queue:pause" in callbacks
 
-
-class TestKindPickerKeyboard:
-    def test_has_5_kinds_plus_back(self):
-        kb = kind_picker_keyboard("abc123")
-        assert len(kb.inline_keyboard) == 6
-
-    def test_callback_data_format(self):
-        short_id = "abc123"
-        kb = kind_picker_keyboard(short_id)
-        callbacks = [row[0].callback_data for row in kb.inline_keyboard[:-1]]
-        assert callbacks == [f"kind:{short_id}:{kind.value}" for kind in TaskKind]
-
-    def test_descriptions_in_labels(self):
-        kb = kind_picker_keyboard("abc123")
-        labels = [row[0].text for row in kb.inline_keyboard[:-1]]
-        assert all(" — " in label for label in labels)
-        assert "something you should do" in labels[0]
-
-    def test_back_button(self):
-        kb = kind_picker_keyboard("abc123")
-        back = kb.inline_keyboard[-1][0]
-        assert back.text == "↩️ Back"
-        assert back.callback_data == "back_to_card:abc123"
-
-
-class TestProjectPickerKeyboard:
-    def test_marks_current_project(self):
-        projects: list[tuple[str, str, str | None]] = [
-            ("Personal", "personal", None),
-            ("Work", "work", None),
+    def test_no_editing_buttons_present(self):
+        kb = _proposal_kb("abc123")
+        callbacks = {button.callback_data for row in kb.inline_keyboard for button in row}
+        editing_prefixes = [
+            "edit:",
+            "change_project:",
+            "change_type:",
+            "clarify:",
+            "draft_message:",
+            "show_steps:",
         ]
-        kb = project_picker_keyboard("abc123", projects, current_project="Personal")
-        assert kb.inline_keyboard[0][0].text.startswith("✓ Personal")
-        assert "(current)" in kb.inline_keyboard[0][0].text
-
-    def test_marks_suggested_project(self):
-        projects: list[tuple[str, str, str | None]] = [
-            ("Personal", "personal", None),
-            ("Work", "work", None),
-        ]
-        kb = project_picker_keyboard("abc123", projects, suggested_project="Work")
-        assert kb.inline_keyboard[1][0].text.startswith("★ Work")
-
-    def test_includes_description(self):
-        long_description = "x" * 60
-        projects: list[tuple[str, str, str | None]] = [("Personal", "personal", long_description)]
-        kb = project_picker_keyboard("abc123", projects)
-        expected_description = long_description[:40]
-        assert kb.inline_keyboard[0][0].text == f"Personal — {expected_description}"
-
-    def test_back_button(self):
-        projects: list[tuple[str, str, str | None]] = [("Personal", "personal", None)]
-        kb = project_picker_keyboard("abc123", projects)
-        back = kb.inline_keyboard[-1][0]
-        assert back.text == "↩️ Back"
-        assert back.callback_data == "back_to_card:abc123"
-
-    def test_callback_data_format(self):
-        projects: list[tuple[str, str, str | None]] = [
-            ("Personal", "personal", None),
-            ("Work", "work", None),
-        ]
-        kb = project_picker_keyboard("abc123", projects)
-        callbacks = [row[0].callback_data for row in kb.inline_keyboard[:-1]]
-        assert callbacks == ["proj:abc123:personal", "proj:abc123:work"]
+        for prefix in editing_prefixes:
+            assert not any(cb and cb.startswith(prefix) for cb in callbacks), (
+                f"Found editing button: {prefix}"
+            )
 
 
 class TestDiscardConfirmKeyboard:
@@ -187,39 +130,3 @@ class TestSettingsKeyboard:
         back = kb.inline_keyboard[-1][0]
         assert back.text == "↩️ Back"
         assert back.callback_data == "settings:close"
-
-
-class TestDisambiguationKeyboard:
-    def test_renders_options(self):
-        options = [("task", "Buy milk", 0), ("idea", "Plan startup", 1)]
-        kb = disambiguation_keyboard("abc123", options)
-        assert len(kb.inline_keyboard) == len(options) + 1
-
-    def test_callback_data_format(self):
-        options = [("task", "Buy milk", 0), ("idea", "Plan startup", 1)]
-        kb = disambiguation_keyboard("abc123", options)
-        callbacks = [row[0].callback_data for row in kb.inline_keyboard[:-1]]
-        assert callbacks == ["disambig:abc123:0", "disambig:abc123:1"]
-
-    def test_footer_has_edit_and_discard(self):
-        kb = disambiguation_keyboard("abc123", [("task", "Buy milk", 0)])
-        footer = kb.inline_keyboard[-1]
-        assert footer[0].text == "✏️ Manual edit"
-        assert footer[1].text == "🗑 Discard"
-
-
-class TestDraftKeyboard:
-    def test_has_4_buttons_in_2_rows(self):
-        kb = draft_keyboard("abc123")
-        assert len(kb.inline_keyboard) == 2
-        assert all(len(row) == 2 for row in kb.inline_keyboard)
-
-    def test_callback_data(self):
-        kb = draft_keyboard("abc123")
-        callbacks = [button.callback_data for row in kb.inline_keyboard for button in row]
-        assert callbacks == [
-            "draft_use:abc123",
-            "draft_shorter:abc123",
-            "draft_formal:abc123",
-            "back_to_card:abc123",
-        ]
