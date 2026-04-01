@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { Card } from "./ui/Card";
 
 interface FieldEditorProps {
   value: string;
@@ -33,7 +34,7 @@ export function FieldEditor({ value, onSave, label }: FieldEditorProps) {
   if (isEditing) {
     const hasUnsavedChanges = editValue.trim() !== value;
     return (
-      <div className="bg-tg-section-bg rounded-2xl p-3 border border-tg-button">
+      <Card className="!p-3 border border-tg-button">
         <div className="flex items-center gap-2 mb-1">
           <div className="text-xs text-tg-hint">{label}</div>
           {hasUnsavedChanges && (
@@ -61,15 +62,12 @@ export function FieldEditor({ value, onSave, label }: FieldEditorProps) {
             Save
           </button>
         </div>
-      </div>
+      </Card>
     );
   }
 
   return (
-    <div 
-      onClick={() => setIsEditing(true)}
-      className="bg-tg-section-bg rounded-2xl p-3 active:bg-tg-secondary-bg transition-colors cursor-pointer group"
-    >
+    <Card interactive onClick={() => setIsEditing(true)} className="!p-3 group">
       <div className="flex justify-between items-start">
         <div className="text-xs text-tg-hint mb-1">{label}</div>
         <svg className="w-4 h-4 text-tg-hint opacity-0 group-hover:opacity-100 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -79,6 +77,6 @@ export function FieldEditor({ value, onSave, label }: FieldEditorProps) {
       <div className="text-tg-text text-base font-medium leading-snug">
         {value}
       </div>
-    </div>
+    </Card>
   );
 }

@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { Layout } from "../components/Layout";
 import { QueueItem } from "../components/QueueItem";
+import { ScreenContent, Chip, EmptyState } from "../components/ui";
 import { useQueue, QueueFilter } from "../hooks/useQueue";
 
 export function QueueScreen() {
@@ -54,17 +55,13 @@ export function QueueScreen() {
 
   return (
     <Layout title="Queue" showBack={false} rightAction={rightAction} footer={footer}>
-      <div className="px-4 pt-4 pb-3">
-        <div className="flex overflow-x-auto hide-scrollbar gap-2 pb-1">
+      <ScreenContent>
+        <div className="flex overflow-x-auto hide-scrollbar gap-2 pb-1 -mt-1 mb-3">
           {tabs.map((tab) => (
-            <button
+            <Chip
               key={tab.id || "all"}
+              selected={filter === tab.id}
               onClick={() => setFilter(tab.id)}
-              className={`flex items-center whitespace-nowrap px-4 py-2 rounded-full text-sm font-medium transition-colors ${
-                filter === tab.id 
-                  ? "bg-tg-button text-tg-button-text" 
-                  : "bg-tg-secondary-bg text-tg-hint active:bg-tg-secondary-bg/80"
-              }`}
             >
               {tab.label}
               {tab.count !== undefined && tab.count > 0 && (
@@ -74,12 +71,10 @@ export function QueueScreen() {
                   {tab.count}
                 </span>
               )}
-            </button>
+            </Chip>
           ))}
         </div>
-      </div>
 
-      <div className="px-4 pb-4">
         {error && (
           <div className="bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400 p-3 rounded-xl mb-4 text-sm flex justify-between items-center">
             <span>{error}</span>
@@ -92,14 +87,15 @@ export function QueueScreen() {
             <div className="w-8 h-8 border-4 border-tg-secondary-bg border-t-tg-button rounded-full animate-spin"></div>
           </div>
         ) : items.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 text-center">
-            <div className="text-4xl mb-3 text-tg-hint">✦</div>
-            <div className="text-base font-medium text-tg-text">Queue is clear</div>
-            <div className="text-sm text-tg-hint mt-1">No tasks need review right now.</div>
-            <button onClick={refresh} className="text-sm text-tg-link font-medium mt-4">
-              Refresh
-            </button>
-          </div>
+          <EmptyState
+            title="Queue is clear"
+            subtitle="No tasks need review right now."
+            action={
+              <button onClick={refresh} className="text-sm text-tg-link font-medium">
+                Refresh
+              </button>
+            }
+          />
         ) : (
           <div className="flex flex-col">
             {items.map((item) => (
@@ -111,7 +107,7 @@ export function QueueScreen() {
             ))}
           </div>
         )}
-      </div>
+      </ScreenContent>
     </Layout>
   );
 }

@@ -8,6 +8,7 @@ import { KindPicker } from "../components/KindPicker";
 import { ConfidenceBadge } from "../components/ConfidenceBadge";
 import { KindBadge } from "../components/KindBadge";
 import { AmbiguityPicker } from "../components/AmbiguityPicker";
+import { ScreenContent, Card } from "../components/ui";
 import { useReview } from "../hooks/useReview";
 import { useQueue } from "../hooks/useQueue";
 
@@ -103,9 +104,11 @@ export function ReviewScreen() {
   if (loading) {
     return (
       <Layout title="Review">
-        <div className="flex justify-center py-12">
-          <div className="w-8 h-8 border-4 border-tg-secondary-bg border-t-tg-button rounded-full animate-spin"></div>
-        </div>
+        <ScreenContent>
+          <div className="flex justify-center py-12">
+            <div className="w-8 h-8 border-4 border-tg-secondary-bg border-t-tg-button rounded-full animate-spin"></div>
+          </div>
+        </ScreenContent>
       </Layout>
     );
   }
@@ -113,10 +116,12 @@ export function ReviewScreen() {
   if (error || !review) {
     return (
       <Layout title="Review">
-        <div className="p-4 text-center">
-          <div className="text-red-500 mb-2">Failed to load review</div>
-          <div className="text-tg-hint text-sm">{error}</div>
-        </div>
+        <ScreenContent>
+          <div className="text-center">
+            <div className="text-red-500 mb-2">Failed to load review</div>
+            <div className="text-tg-hint text-sm">{error}</div>
+          </div>
+        </ScreenContent>
       </Layout>
     );
   }
@@ -132,7 +137,7 @@ export function ReviewScreen() {
         ) : undefined
       }
     >
-      <div className="p-4 pt-2 pb-28">
+      <ScreenContent bottomPadding="pb-28">
         <div className="mb-4">
           <button 
             onClick={() => setShowRaw(!showRaw)}
@@ -192,10 +197,7 @@ export function ReviewScreen() {
             <ConfidenceBadge confidence={review.confidence} />
           </div>
 
-          <button 
-            onClick={() => setIsProjectPickerOpen(true)}
-            className="w-full flex justify-between items-center bg-tg-section-bg p-3 rounded-2xl active:bg-tg-secondary-bg transition-colors text-left"
-          >
+          <Card interactive onClick={() => setIsProjectPickerOpen(true)} className="!p-3 flex justify-between items-center">
             <div>
               <div className="text-xs text-tg-hint mb-0.5">Project</div>
               <div className="text-tg-text font-medium">{review.project_name || "Inbox"}</div>
@@ -203,20 +205,20 @@ export function ReviewScreen() {
             <svg className="w-5 h-5 text-tg-hint" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
             </svg>
-          </button>
+          </Card>
 
           {review.next_action && (
-            <div className="bg-tg-section-bg p-3 rounded-2xl">
+            <Card className="!p-3">
               <div className="text-xs text-tg-hint mb-1">Next Action</div>
               <div className="text-tg-text text-sm">{review.next_action}</div>
-            </div>
+            </Card>
           )}
 
           {review.due_hint && (
-            <div className="bg-tg-section-bg p-3 rounded-2xl">
+            <Card className="!p-3">
               <div className="text-xs text-tg-hint mb-1">Due Hint</div>
               <div className="text-tg-text text-sm">{review.due_hint}</div>
-            </div>
+            </Card>
           )}
 
           {review.substeps && review.substeps.length > 0 && (
@@ -248,9 +250,9 @@ export function ReviewScreen() {
           </button>
           
           {draftText && (
-            <div className="bg-tg-section-bg p-3 rounded-2xl text-sm text-tg-text whitespace-pre-wrap border border-tg-link/30">
+            <Card className="!p-3 text-sm text-tg-text whitespace-pre-wrap border border-tg-link/30">
               {draftText}
-            </div>
+            </Card>
           )}
 
           <button 
@@ -260,7 +262,7 @@ export function ReviewScreen() {
             Discard
           </button>
         </div>
-      </div>
+      </ScreenContent>
 
       <ProjectPicker 
         isOpen={isProjectPickerOpen} 

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Layout } from "../components/Layout";
 import { ProjectTypeBadge } from "../components/ProjectTypeBadge";
 import { CategoryPicker } from "../components/CategoryPicker";
+import { ScreenContent, Card, EmptyState } from "../components/ui";
 import { api, ProjectListItem } from "../api/client";
 
 export function ProjectsScreen() {
@@ -33,9 +34,11 @@ export function ProjectsScreen() {
   if (loading) {
     return (
       <Layout title="Projects">
-        <div className="flex justify-center py-12">
-          <div className="w-8 h-8 border-4 border-tg-secondary-bg border-t-tg-button rounded-full animate-spin"></div>
-        </div>
+        <ScreenContent>
+          <div className="flex justify-center py-12">
+            <div className="w-8 h-8 border-4 border-tg-secondary-bg border-t-tg-button rounded-full animate-spin"></div>
+          </div>
+        </ScreenContent>
       </Layout>
     );
   }
@@ -43,24 +46,24 @@ export function ProjectsScreen() {
   if (error) {
     return (
       <Layout title="Projects">
-        <div className="px-4 pt-4 text-center">
-          <div className="text-red-500 mb-2">Failed to load projects</div>
-          <div className="text-tg-hint text-sm">{error}</div>
-        </div>
+        <ScreenContent>
+          <div className="text-center">
+            <div className="text-red-500 mb-2">Failed to load projects</div>
+            <div className="text-tg-hint text-sm">{error}</div>
+          </div>
+        </ScreenContent>
       </Layout>
     );
   }
 
   return (
     <Layout title="Projects">
-      <div className="px-4 pt-4 pb-4">
+      <ScreenContent>
         <div className="flex flex-col gap-3">
           {projects.map((project) => (
-            <div 
+            <Card
               key={project.id}
-              className={`bg-tg-section-bg rounded-2xl p-4 ${
-                !project.is_active ? "opacity-60" : ""
-              }`}
+              className={!project.is_active ? "opacity-60" : ""}
             >
               <div className="flex justify-between items-center mb-1">
                 <h3 className="text-tg-text font-semibold text-base">{project.name}</h3>
@@ -82,18 +85,17 @@ export function ProjectsScreen() {
                   Inactive
                 </div>
               )}
-            </div>
+            </Card>
           ))}
           
           {projects.length === 0 && (
-            <div className="flex flex-col items-center justify-center py-16 text-center">
-              <div className="text-4xl mb-3 text-tg-hint">✦</div>
-              <div className="text-base font-medium text-tg-text">No projects configured</div>
-              <div className="text-sm text-tg-hint mt-1">Projects will appear here once added.</div>
-            </div>
+            <EmptyState
+              title="No projects configured"
+              subtitle="Projects will appear here once added."
+            />
           )}
         </div>
-      </div>
+      </ScreenContent>
 
       {pickerProject && (
         <CategoryPicker

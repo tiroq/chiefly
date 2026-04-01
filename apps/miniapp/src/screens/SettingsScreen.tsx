@@ -1,5 +1,6 @@
 import { Layout } from "../components/Layout";
 import { ToggleSetting } from "../components/ToggleSetting";
+import { ScreenContent, SectionHeader } from "../components/ui";
 import { useSettings } from "../hooks/useSettings";
 
 export function SettingsScreen() {
@@ -8,9 +9,11 @@ export function SettingsScreen() {
   if (loading) {
     return (
       <Layout title="Settings">
-        <div className="flex justify-center py-12">
-          <div className="w-8 h-8 border-4 border-tg-secondary-bg border-t-tg-button rounded-full animate-spin"></div>
-        </div>
+        <ScreenContent>
+          <div className="flex justify-center py-12">
+            <div className="w-8 h-8 border-4 border-tg-secondary-bg border-t-tg-button rounded-full animate-spin"></div>
+          </div>
+        </ScreenContent>
       </Layout>
     );
   }
@@ -18,19 +21,21 @@ export function SettingsScreen() {
   if (error || !settings) {
     return (
       <Layout title="Settings">
-        <div className="p-4 text-center">
-          <div className="text-red-500 mb-2">Failed to load settings</div>
-          <div className="text-tg-hint text-sm">{error}</div>
-        </div>
+        <ScreenContent>
+          <div className="text-center">
+            <div className="text-red-500 mb-2">Failed to load settings</div>
+            <div className="text-tg-hint text-sm">{error}</div>
+          </div>
+        </ScreenContent>
       </Layout>
     );
   }
 
   return (
     <Layout title="Settings">
-      <div className="px-4 pt-4 pb-4">
+      <ScreenContent>
         <div className="mb-6">
-          <h2 className="text-xs font-medium text-tg-hint uppercase tracking-wide mb-2">Queue</h2>
+          <SectionHeader>Queue</SectionHeader>
           <div className="bg-tg-section-bg rounded-2xl overflow-hidden">
             <ToggleSetting
               label="Auto-advance"
@@ -70,7 +75,7 @@ export function SettingsScreen() {
         </div>
 
         <div className="mb-6">
-          <h2 className="text-xs font-medium text-tg-hint uppercase tracking-wide mb-2">Display</h2>
+          <SectionHeader>Display</SectionHeader>
           <div className="bg-tg-section-bg rounded-2xl overflow-hidden">
             <ToggleSetting
               label="Show confidence"
@@ -100,7 +105,7 @@ export function SettingsScreen() {
         </div>
 
         <div className="mb-8">
-          <h2 className="text-xs font-medium text-tg-hint uppercase tracking-wide mb-2">Features</h2>
+          <SectionHeader>Features</SectionHeader>
           <div className="bg-tg-section-bg rounded-2xl overflow-hidden">
             <ToggleSetting
               label="Draft suggestions"
@@ -128,7 +133,7 @@ export function SettingsScreen() {
             />
           </div>
         </div>
-      </div>
+      </ScreenContent>
     </Layout>
   );
 }
