@@ -37,20 +37,18 @@ export function ProjectsScreen() {
 
   return (
     <Layout title="Projects">
-      <div className="p-4">
-        <h1 className="text-2xl font-bold text-tg-text mb-6">Projects</h1>
-        
+      <div className="p-4 pt-4">
         <div className="flex flex-col gap-3">
           {projects.map((project) => (
             <div 
               key={project.id}
-              className={`bg-tg-section-bg rounded-xl p-4 border border-tg-secondary-bg ${
+              className={`bg-tg-section-bg rounded-2xl p-4 ${
                 !project.is_active ? "opacity-60" : ""
               }`}
             >
               <div className="flex justify-between items-start mb-1">
                 <h3 className="text-tg-text font-semibold text-base">{project.name}</h3>
-                <span className="text-[10px] px-2 py-1 rounded-full bg-tg-secondary-bg text-tg-hint">
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-tg-secondary-bg text-tg-hint">
                   {project.project_type}
                 </span>
               </div>
@@ -70,8 +68,10 @@ export function ProjectsScreen() {
           ))}
           
           {projects.length === 0 && (
-            <div className="text-center py-12 text-tg-hint">
-              <p>No projects found</p>
+            <div className="flex flex-col items-center justify-center py-16 text-center">
+              <div className="text-4xl mb-3 text-tg-hint">✦</div>
+              <div className="text-base font-medium text-tg-text">No projects configured</div>
+              <div className="text-sm text-tg-hint mt-1">Projects will appear here once added.</div>
             </div>
           )}
         </div>

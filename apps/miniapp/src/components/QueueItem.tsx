@@ -14,14 +14,14 @@ export function QueueItem({ item, onClick }: QueueItemProps) {
   return (
     <div 
       onClick={onClick}
-      className="bg-tg-section-bg rounded-xl p-4 mb-3 shadow-sm active:opacity-70 transition-opacity cursor-pointer"
+      className="bg-tg-section-bg rounded-2xl p-3 mb-3 active:scale-[0.98] transition-transform cursor-pointer"
     >
       <div className="flex justify-between items-start mb-2">
         <div className="flex gap-2 flex-wrap">
           <KindBadge kind={item.kind} />
           <ConfidenceBadge confidence={item.confidence} />
           {item.has_ambiguity && (
-            <span className="px-2 py-0.5 text-[10px] font-medium rounded-full bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400">
+            <span className="px-2 py-0.5 text-[10px] font-medium rounded-full bg-red-500/15 text-red-400">
               AMBIGUOUS
             </span>
           )}

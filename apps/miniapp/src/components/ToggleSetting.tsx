@@ -12,8 +12,8 @@ export function ToggleSetting({ label, description, checked, onChange }: ToggleS
       onClick={() => onChange(!checked)}
     >
       <div className="flex-1 pr-4">
-        <div className="text-base font-medium text-tg-text mb-0.5">{label}</div>
-        <div className="text-sm text-tg-subtitle leading-tight">{description}</div>
+        <div className="text-sm font-medium text-tg-text">{label}</div>
+        <div className="text-xs text-tg-hint">{description}</div>
       </div>
       
       <div className="relative inline-flex items-center cursor-pointer shrink-0">

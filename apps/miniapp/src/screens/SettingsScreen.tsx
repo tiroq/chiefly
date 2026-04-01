@@ -28,12 +28,10 @@ export function SettingsScreen() {
 
   return (
     <Layout title="Settings">
-      <div className="p-4">
-        <h1 className="text-2xl font-bold text-tg-text mb-6">Settings</h1>
-
+      <div className="p-4 pt-4">
         <div className="mb-6">
-          <h2 className="text-sm font-semibold text-tg-section-header mb-2 uppercase tracking-wider px-4">Queue</h2>
-          <div className="bg-tg-section-bg rounded-xl overflow-hidden">
+          <h2 className="text-xs font-medium text-tg-hint uppercase tracking-wide px-4 mb-2">Queue</h2>
+          <div className="bg-tg-section-bg rounded-2xl overflow-hidden">
             <ToggleSetting
               label="Auto-advance"
               description="Move to next task after confirm/discard"
@@ -49,15 +47,15 @@ export function SettingsScreen() {
             
             <div className="flex items-center justify-between py-3 px-4 bg-tg-section-bg border-t border-tg-secondary-bg">
               <div className="flex-1 pr-4">
-                <div className="text-base font-medium text-tg-text mb-0.5">Batch size</div>
-                <div className="text-sm text-tg-subtitle leading-tight">Tasks sent at once</div>
+                <div className="text-sm font-medium text-tg-text">Batch size</div>
+                <div className="text-xs text-tg-hint">Tasks sent at once</div>
               </div>
               <div className="flex bg-tg-secondary-bg rounded-lg p-1">
                 {[1, 5, 10].map((size) => (
                   <button
                     key={size}
                     onClick={() => updateSetting({ batch_size: size })}
-                    className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${
+                    className={`min-w-[40px] px-3 py-1 text-sm font-medium rounded-md transition-colors ${
                       settings.batch_size === size 
                         ? "bg-tg-button text-tg-button-text shadow-sm" 
                         : "text-tg-hint active:bg-tg-hint/20"
@@ -72,8 +70,8 @@ export function SettingsScreen() {
         </div>
 
         <div className="mb-6">
-          <h2 className="text-sm font-semibold text-tg-section-header mb-2 uppercase tracking-wider px-4">Display</h2>
-          <div className="bg-tg-section-bg rounded-xl overflow-hidden">
+          <h2 className="text-xs font-medium text-tg-hint uppercase tracking-wide px-4 mb-2">Display</h2>
+          <div className="bg-tg-section-bg rounded-2xl overflow-hidden">
             <ToggleSetting
               label="Show confidence"
               description="Display AI confidence level"
@@ -101,9 +99,9 @@ export function SettingsScreen() {
           </div>
         </div>
 
-        <div className="mb-6">
-          <h2 className="text-sm font-semibold text-tg-section-header mb-2 uppercase tracking-wider px-4">Features</h2>
-          <div className="bg-tg-section-bg rounded-xl overflow-hidden">
+        <div className="mb-8">
+          <h2 className="text-xs font-medium text-tg-hint uppercase tracking-wide px-4 mb-2">Features</h2>
+          <div className="bg-tg-section-bg rounded-2xl overflow-hidden">
             <ToggleSetting
               label="Draft suggestions"
               description="Auto-generate draft messages"

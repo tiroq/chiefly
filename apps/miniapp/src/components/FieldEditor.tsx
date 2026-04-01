@@ -31,9 +31,15 @@ export function FieldEditor({ value, onSave, label }: FieldEditorProps) {
   };
 
   if (isEditing) {
+    const hasUnsavedChanges = editValue.trim() !== value;
     return (
-      <div className="bg-tg-section-bg rounded-xl p-3 border border-tg-link">
-        <div className="text-xs text-tg-hint mb-1">{label}</div>
+      <div className="bg-tg-section-bg rounded-2xl p-3 border border-tg-button">
+        <div className="flex items-center gap-2 mb-1">
+          <div className="text-xs text-tg-hint">{label}</div>
+          {hasUnsavedChanges && (
+            <div className="w-1.5 h-1.5 rounded-full bg-tg-button" />
+          )}
+        </div>
         <textarea
           ref={inputRef}
           value={editValue}
@@ -62,7 +68,7 @@ export function FieldEditor({ value, onSave, label }: FieldEditorProps) {
   return (
     <div 
       onClick={() => setIsEditing(true)}
-      className="bg-tg-section-bg rounded-xl p-3 active:bg-tg-secondary-bg transition-colors cursor-pointer group"
+      className="bg-tg-section-bg rounded-2xl p-3 active:bg-tg-secondary-bg transition-colors cursor-pointer group"
     >
       <div className="flex justify-between items-start">
         <div className="text-xs text-tg-hint mb-1">{label}</div>

@@ -7,7 +7,9 @@ import { ProjectPicker } from "../components/ProjectPicker";
 import { KindPicker } from "../components/KindPicker";
 import { ConfidenceBadge } from "../components/ConfidenceBadge";
 import { KindBadge } from "../components/KindBadge";
+import { AmbiguityPicker } from "../components/AmbiguityPicker";
 import { useReview } from "../hooks/useReview";
+import { useQueue } from "../hooks/useQueue";
 
 export function ReviewScreen() {
   const { stableId } = useParams<{ stableId: string }>();
@@ -16,12 +18,18 @@ export function ReviewScreen() {
     review, loading, error, 
     confirm, discard, editTitle, changeProject, changeType, clarify, getDraft 
   } = useReview(stableId);
+  const { items, counts } = useQueue();
 
   const [isProjectPickerOpen, setIsProjectPickerOpen] = useState(false);
   const [isKindPickerOpen, setIsKindPickerOpen] = useState(false);
+  const [isAmbiguityPickerOpen, setIsAmbiguityPickerOpen] = useState(false);
   const [draftText, setDraftText] = useState<string | null>(null);
   const [isDraftLoading, setIsDraftLoading] = useState(false);
   const [showRaw, setShowRaw] = useState(false);
+  const [clarifyingIdx, setClarifyingIdx] = useState<number | null>(null);
+
+  const currentIndex = items.findIndex(item => item.stable_id === stableId);
+  const positionText = currentIndex >= 0 ? `${currentIndex + 1} of ${counts.total}` : "";
 
   useEffect(() => {
     if (review) {
@@ -82,6 +90,16 @@ export function ReviewScreen() {
     }
   };
 
+  const handleClarify = async (idx: number) => {
+    setClarifyingIdx(idx);
+    try {
+      await clarify(idx);
+      setIsAmbiguityPickerOpen(false);
+    } finally {
+      setClarifyingIdx(null);
+    }
+  };
+
   if (loading) {
     return (
       <Layout title="Review">
@@ -104,27 +122,79 @@ export function ReviewScreen() {
   }
 
   return (
-    <Layout title="Review">
-      <div className="p-4 pb-24">
-        <div className="flex gap-2 mb-4">
-          <button onClick={() => setIsKindPickerOpen(true)}>
-            <KindBadge kind={review.kind} />
+    <Layout 
+      title="Review"
+      rightAction={
+        positionText ? (
+          <div className="text-xs text-tg-hint bg-tg-secondary-bg px-2 py-0.5 rounded-full">
+            {positionText}
+          </div>
+        ) : undefined
+      }
+    >
+      <div className="p-4 pt-2 pb-28">
+        <div className="mb-4">
+          <button 
+            onClick={() => setShowRaw(!showRaw)}
+            className="w-full bg-tg-section-bg rounded-2xl p-3 active:bg-tg-secondary-bg transition-colors text-left"
+          >
+            <div className="flex justify-between items-center mb-1">
+              <div className="text-xs font-medium text-tg-hint uppercase tracking-wide">What you said</div>
+              <svg className={`w-4 h-4 text-tg-hint transition-transform ${showRaw ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+            {showRaw ? (
+              <div className="bg-tg-secondary-bg rounded-2xl p-3 font-mono text-xs text-tg-text whitespace-pre-wrap mt-2">
+                {review.raw_text}
+              </div>
+            ) : (
+              <div className="text-sm text-tg-text truncate">
+                {review.raw_text.length > 80 ? review.raw_text.substring(0, 80) + "..." : review.raw_text}
+              </div>
+            )}
           </button>
-          <ConfidenceBadge confidence={review.confidence} />
         </div>
 
-        <div className="mb-6">
+        {review.ambiguities && review.ambiguities.length > 0 && (
+          <div className="mb-4">
+            <button
+              onClick={() => setIsAmbiguityPickerOpen(true)}
+              className="w-full flex items-center gap-3 bg-amber-500/10 p-3 rounded-2xl active:bg-amber-500/20 transition-colors text-left"
+            >
+              <svg className="w-5 h-5 text-amber-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium text-amber-600 dark:text-amber-400">Needs Clarification</div>
+                <div className="text-xs text-tg-hint mt-0.5 truncate">
+                  {review.ambiguities.length} issue{review.ambiguities.length > 1 ? "s" : ""} — tap to resolve
+                </div>
+              </div>
+              <svg className="w-5 h-5 text-tg-hint shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+          </div>
+        )}
+
+        <div className="space-y-4 mb-6">
           <FieldEditor 
             label="Title" 
             value={review.normalized_title} 
             onSave={editTitle} 
           />
-        </div>
 
-        <div className="space-y-3 mb-6">
+          <div className="flex items-center gap-2">
+            <button onClick={() => setIsKindPickerOpen(true)} className="active:opacity-70 transition-opacity">
+              <KindBadge kind={review.kind} />
+            </button>
+            <ConfidenceBadge confidence={review.confidence} />
+          </div>
+
           <button 
             onClick={() => setIsProjectPickerOpen(true)}
-            className="w-full flex justify-between items-center bg-tg-section-bg p-3 rounded-xl active:bg-tg-secondary-bg transition-colors text-left"
+            className="w-full flex justify-between items-center bg-tg-section-bg p-3 rounded-2xl active:bg-tg-secondary-bg transition-colors text-left"
           >
             <div>
               <div className="text-xs text-tg-hint mb-0.5">Project</div>
@@ -136,76 +206,30 @@ export function ReviewScreen() {
           </button>
 
           {review.next_action && (
-            <div className="bg-tg-section-bg p-3 rounded-xl">
+            <div className="bg-tg-section-bg p-3 rounded-2xl">
               <div className="text-xs text-tg-hint mb-1">Next Action</div>
               <div className="text-tg-text text-sm">{review.next_action}</div>
             </div>
           )}
 
           {review.due_hint && (
-            <div className="bg-tg-section-bg p-3 rounded-xl">
+            <div className="bg-tg-section-bg p-3 rounded-2xl">
               <div className="text-xs text-tg-hint mb-1">Due Hint</div>
               <div className="text-tg-text text-sm">{review.due_hint}</div>
             </div>
           )}
-        </div>
 
-        {review.substeps && review.substeps.length > 0 && (
-          <div className="mb-6">
-            <h3 className="text-sm font-semibold text-tg-section-header mb-2 uppercase tracking-wider">Substeps</h3>
-            <div className="bg-tg-section-bg rounded-xl overflow-hidden">
-              {review.substeps.map((step, idx) => (
-                <div key={idx} className="p-3 border-b border-tg-secondary-bg last:border-b-0 flex gap-3">
-                  <div className="text-tg-hint text-sm mt-0.5">{idx + 1}.</div>
-                  <div className="text-tg-text text-sm">{step}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {review.ambiguities && review.ambiguities.length > 0 && (
-          <div className="mb-6">
-            <h3 className="text-sm font-semibold text-red-500 mb-2 uppercase tracking-wider">Ambiguities</h3>
-            <div className="bg-red-50 dark:bg-red-900/10 rounded-xl p-3 border border-red-100 dark:border-red-900/30">
-              <ul className="list-disc pl-4 space-y-1">
-                {review.ambiguities.map((amb, idx) => (
-                  <li key={idx} className="text-sm text-red-800 dark:text-red-400">{amb}</li>
+          {review.substeps && review.substeps.length > 0 && (
+            <div>
+              <h3 className="text-xs font-medium text-tg-hint uppercase tracking-wide mb-2">Substeps</h3>
+              <div className="bg-tg-section-bg rounded-2xl overflow-hidden">
+                {review.substeps.map((step, idx) => (
+                  <div key={idx} className="p-3 border-b border-tg-secondary-bg last:border-b-0 flex gap-3">
+                    <div className="text-tg-hint text-sm mt-0.5">{idx + 1}.</div>
+                    <div className="text-tg-text text-sm">{step}</div>
+                  </div>
                 ))}
-              </ul>
-              
-              {review.disambiguation_options && review.disambiguation_options.length > 0 && (
-                <div className="mt-4 space-y-2">
-                  {review.disambiguation_options.map((opt: Record<string, unknown>, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => clarify(idx)}
-                      className="w-full text-left p-2 rounded-lg bg-white dark:bg-black/20 border border-red-200 dark:border-red-900/50 text-sm active:opacity-70"
-                    >
-                      <div className="font-medium text-tg-text">{String(opt.title || `Option ${idx + 1}`)}</div>
-                      {!!opt.description && <div className="text-xs text-tg-hint mt-0.5">{String(opt.description)}</div>}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        <div className="mb-6">
-          <button 
-            onClick={() => setShowRaw(!showRaw)}
-            className="flex items-center text-sm text-tg-link font-medium mb-2"
-          >
-            {showRaw ? "Hide Raw Input" : "Show Raw Input"}
-            <svg className={`w-4 h-4 ml-1 transition-transform ${showRaw ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
-          </button>
-          
-          {showRaw && (
-            <div className="bg-tg-secondary-bg p-3 rounded-xl text-sm text-tg-text whitespace-pre-wrap font-mono text-xs">
-              {review.raw_text}
+              </div>
             </div>
           )}
         </div>
@@ -214,7 +238,7 @@ export function ReviewScreen() {
           <button 
             onClick={handleLoadDraft}
             disabled={isDraftLoading}
-            className="w-full py-3 rounded-xl bg-tg-section-bg text-tg-link font-medium active:opacity-70 flex justify-center items-center"
+            className="w-full py-3 rounded-2xl bg-tg-section-bg text-tg-link font-medium active:opacity-70 flex justify-center items-center"
           >
             {isDraftLoading ? (
               <div className="w-5 h-5 border-2 border-tg-link border-t-transparent rounded-full animate-spin"></div>
@@ -224,14 +248,14 @@ export function ReviewScreen() {
           </button>
           
           {draftText && (
-            <div className="bg-tg-section-bg p-3 rounded-xl text-sm text-tg-text whitespace-pre-wrap border border-tg-link/30">
+            <div className="bg-tg-section-bg p-3 rounded-2xl text-sm text-tg-text whitespace-pre-wrap border border-tg-link/30">
               {draftText}
             </div>
           )}
 
           <button 
             onClick={handleDiscard}
-            className="w-full py-3 rounded-xl bg-red-100 text-red-600 dark:bg-red-900/20 dark:text-red-500 font-medium active:opacity-70"
+            className="w-full py-3 rounded-2xl bg-tg-destructive/10 text-tg-destructive font-medium active:opacity-70"
           >
             Discard
           </button>
@@ -243,6 +267,8 @@ export function ReviewScreen() {
         onClose={() => setIsProjectPickerOpen(false)} 
         onSelect={changeProject}
         currentProjectId={review.project_id}
+        taskTitle={review.normalized_title}
+        currentProjectName={review.project_name}
       />
       
       <KindPicker 
@@ -250,6 +276,17 @@ export function ReviewScreen() {
         onClose={() => setIsKindPickerOpen(false)} 
         onSelect={changeType}
         currentKind={review.kind}
+        taskTitle={review.normalized_title}
+      />
+
+      <AmbiguityPicker
+        isOpen={isAmbiguityPickerOpen}
+        onClose={() => setIsAmbiguityPickerOpen(false)}
+        onSelect={handleClarify}
+        ambiguities={review.ambiguities}
+        options={review.disambiguation_options}
+        taskTitle={review.normalized_title}
+        clarifyingIdx={clarifyingIdx}
       />
     </Layout>
   );
