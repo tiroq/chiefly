@@ -21,12 +21,13 @@ Card must show:
 - next action
 - confidence
 
-Actions:
+Bot Actions (quick triage):
 - confirm
-- edit
-- change project
-- change type
 - discard
+- skip
+- pause
+
+All editing actions (edit title, change project, change type, clarify, draft message, show steps) are available exclusively through the Mini App.
 
 ## Settings Command
 
