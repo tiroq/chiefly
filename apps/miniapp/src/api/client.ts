@@ -162,6 +162,12 @@ export const api = {
     request<UserSettings>("/settings", { method: "PUT", body: settings }),
 
   getProjects: () => request<ProjectListItem[]>("/projects"),
+
+  updateProjectType: (projectId: string, projectType: string) =>
+    request<ActionResponse>(`/projects/${projectId}`, {
+      method: "PATCH",
+      body: { project_type: projectType },
+    }),
 };
 
 declare global {

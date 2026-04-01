@@ -54,13 +54,13 @@ export function QueueScreen() {
 
   return (
     <Layout title="Queue" showBack={false} rightAction={rightAction} footer={footer}>
-      <div className="px-4 pt-3 pb-2">
+      <div className="px-4 pt-4 pb-3">
         <div className="flex overflow-x-auto hide-scrollbar gap-2 pb-1">
           {tabs.map((tab) => (
             <button
               key={tab.id || "all"}
               onClick={() => setFilter(tab.id)}
-              className={`flex items-center whitespace-nowrap px-3.5 py-1.5 rounded-full text-sm font-medium transition-colors ${
+              className={`flex items-center whitespace-nowrap px-4 py-2 rounded-full text-sm font-medium transition-colors ${
                 filter === tab.id 
                   ? "bg-tg-button text-tg-button-text" 
                   : "bg-tg-secondary-bg text-tg-hint active:bg-tg-secondary-bg/80"
@@ -68,7 +68,7 @@ export function QueueScreen() {
             >
               {tab.label}
               {tab.count !== undefined && tab.count > 0 && (
-                <span className={`ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] ${
+                <span className={`ml-1.5 px-2 py-0.5 rounded-full text-[11px] ${
                   filter === tab.id ? "bg-white/20" : "bg-tg-hint/20"
                 }`}>
                   {tab.count}

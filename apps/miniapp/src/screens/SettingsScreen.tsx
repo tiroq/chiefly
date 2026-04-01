@@ -28,9 +28,9 @@ export function SettingsScreen() {
 
   return (
     <Layout title="Settings">
-      <div className="p-4 pt-4">
+      <div className="px-4 pt-4 pb-4">
         <div className="mb-6">
-          <h2 className="text-xs font-medium text-tg-hint uppercase tracking-wide px-4 mb-2">Queue</h2>
+          <h2 className="text-xs font-medium text-tg-hint uppercase tracking-wide mb-2">Queue</h2>
           <div className="bg-tg-section-bg rounded-2xl overflow-hidden">
             <ToggleSetting
               label="Auto-advance"
@@ -70,7 +70,7 @@ export function SettingsScreen() {
         </div>
 
         <div className="mb-6">
-          <h2 className="text-xs font-medium text-tg-hint uppercase tracking-wide px-4 mb-2">Display</h2>
+          <h2 className="text-xs font-medium text-tg-hint uppercase tracking-wide mb-2">Display</h2>
           <div className="bg-tg-section-bg rounded-2xl overflow-hidden">
             <ToggleSetting
               label="Show confidence"
@@ -100,7 +100,7 @@ export function SettingsScreen() {
         </div>
 
         <div className="mb-8">
-          <h2 className="text-xs font-medium text-tg-hint uppercase tracking-wide px-4 mb-2">Features</h2>
+          <h2 className="text-xs font-medium text-tg-hint uppercase tracking-wide mb-2">Features</h2>
           <div className="bg-tg-section-bg rounded-2xl overflow-hidden">
             <ToggleSetting
               label="Draft suggestions"

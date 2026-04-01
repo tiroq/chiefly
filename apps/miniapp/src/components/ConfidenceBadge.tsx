@@ -15,7 +15,7 @@ export function ConfidenceBadge({ confidence }: ConfidenceBadgeProps) {
   }
 
   return (
-    <span className={`px-2 py-0.5 text-[10px] font-medium rounded-full ${colorClass}`}>
+    <span className={`px-2.5 py-1 text-[11px] font-medium rounded-full ${colorClass}`}>
       {normalized}
     </span>
   );

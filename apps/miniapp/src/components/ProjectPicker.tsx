@@ -67,7 +67,7 @@ export function ProjectPicker({ isOpen, onClose, onSelect, currentProjectId, tas
                     )}
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] px-2 py-1 rounded-full bg-tg-bg text-tg-hint border border-tg-secondary-bg">
+                    <span className="text-[11px] px-2.5 py-1 rounded-full bg-tg-bg text-tg-hint border border-tg-secondary-bg">
                       {project.project_type}
                     </span>
                     {currentProjectId === project.id && (
