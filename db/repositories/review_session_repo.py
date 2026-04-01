@@ -21,19 +21,7 @@ class ReviewSessionRepository:
             select(TelegramReviewSession)
             .where(
                 TelegramReviewSession.stable_id == stable_id,
-                TelegramReviewSession.status.in_(["pending", "awaiting_edit"]),
-            )
-            .order_by(TelegramReviewSession.created_at.desc())
-            .limit(1)
-        )
-        return result.scalar_one_or_none()
-
-    async def get_pending_edit_by_chat(self, chat_id: str) -> TelegramReviewSession | None:
-        result = await self._session.execute(
-            select(TelegramReviewSession)
-            .where(
-                TelegramReviewSession.telegram_chat_id == chat_id,
-                TelegramReviewSession.status == "awaiting_edit",
+                TelegramReviewSession.status.in_(["pending"]),
             )
             .order_by(TelegramReviewSession.created_at.desc())
             .limit(1)
@@ -98,7 +86,7 @@ class ReviewSessionRepository:
     async def has_active_review(self) -> bool:
         result = await self._session.execute(
             select(func.count(TelegramReviewSession.id)).where(
-                TelegramReviewSession.status.in_(["pending", "awaiting_edit"])
+                TelegramReviewSession.status.in_(["pending"])
             )
         )
         return (result.scalar() or 0) > 0
