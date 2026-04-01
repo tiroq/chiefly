@@ -10,6 +10,7 @@ from apps.api.miniapp.auth import verify_miniapp_auth
 from apps.api.miniapp.schemas import (
     ActionResponse,
     ChangeProjectRequest,
+    ChangeProjectTypeRequest,
     ChangeTypeRequest,
     ClarifyRequest,
     DraftResponse,
@@ -21,6 +22,7 @@ from apps.api.miniapp.schemas import (
     UserSettingsResponse,
     UserSettingsUpdateRequest,
 )
+from core.domain.enums import ProjectType
 from apps.api.services.miniapp_review_service import MiniAppReviewService
 from apps.api.services.user_settings_service import get_user_settings, save_user_settings
 from db.repositories.project_repo import ProjectRepository
@@ -189,6 +191,30 @@ async def update_settings_endpoint(
     await save_user_settings(session, settings)
     await session.commit()
     return _to_settings_response(settings)
+
+
+@router.patch("/projects/{project_id}", response_model=ActionResponse)
+async def update_project_type(
+    project_id: uuid.UUID,
+    payload: ChangeProjectTypeRequest,
+    session: AsyncSession = Depends(get_session),
+) -> ActionResponse:
+    try:
+        new_type = ProjectType(payload.project_type.lower())
+    except ValueError:
+        valid = [t.value for t in ProjectType]
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid project_type. Valid values: {', '.join(valid)}",
+        )
+    repo = ProjectRepository(session)
+    project = await repo.get_by_id(project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    project.project_type = new_type
+    await repo.save(project)
+    await session.commit()
+    return ActionResponse(success=True, message="Project type updated")
 
 
 @router.get("/projects", response_model=list[ProjectListItem])

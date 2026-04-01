@@ -62,6 +62,10 @@ class ClarifyRequest(BaseModel):
     option_index: int
 
 
+class ChangeProjectTypeRequest(BaseModel):
+    project_type: str
+
+
 class DraftResponse(BaseModel):
     success: bool
     draft_text: str | None = None
