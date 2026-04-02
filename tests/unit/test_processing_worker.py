@@ -856,6 +856,7 @@ async def test_run_processing_requeues_on_rate_limit(
     from apps.api.workers.processing_worker import run_processing
 
     settings = MagicMock()
+    settings.review_ready_buffer_size = 10
     mock_settings.return_value = settings
 
     entry = _make_queue_entry()
@@ -890,6 +891,7 @@ async def test_run_processing_requeues_on_rate_limit(
 
         record_repo = MagicMock()
         record_repo.update_processing_status = AsyncMock()
+        record_repo.count_by_workflow_status = AsyncMock(return_value=0)
         mock_record_cls.return_value = record_repo
 
         event_repo = MagicMock()
@@ -918,6 +920,7 @@ async def test_run_processing_rate_limit_emits_system_event(
     from apps.api.workers.processing_worker import run_processing
 
     settings = MagicMock()
+    settings.review_ready_buffer_size = 10
     mock_settings.return_value = settings
 
     entry = _make_queue_entry()
@@ -953,6 +956,7 @@ async def test_run_processing_rate_limit_emits_system_event(
 
         record_repo = MagicMock()
         record_repo.update_processing_status = AsyncMock()
+        record_repo.count_by_workflow_status = AsyncMock(return_value=0)
         mock_record_cls.return_value = record_repo
 
         event_repo = MagicMock()
@@ -979,6 +983,7 @@ async def test_run_processing_rate_limit_resets_to_pending_not_failed(
     from apps.api.workers.processing_worker import run_processing
 
     settings = MagicMock()
+    settings.review_ready_buffer_size = 10
     mock_settings.return_value = settings
 
     entry = _make_queue_entry()
@@ -1012,6 +1017,7 @@ async def test_run_processing_rate_limit_resets_to_pending_not_failed(
 
         record_repo = MagicMock()
         record_repo.update_processing_status = AsyncMock()
+        record_repo.count_by_workflow_status = AsyncMock(return_value=0)
         mock_record_cls.return_value = record_repo
 
         event_repo = MagicMock()
@@ -1037,6 +1043,7 @@ async def test_run_processing_rate_limit_commits_session(
     from apps.api.workers.processing_worker import run_processing
 
     settings = MagicMock()
+    settings.review_ready_buffer_size = 10
     mock_settings.return_value = settings
 
     entry = _make_queue_entry()
@@ -1071,6 +1078,7 @@ async def test_run_processing_rate_limit_commits_session(
 
         record_repo = MagicMock()
         record_repo.update_processing_status = AsyncMock()
+        record_repo.count_by_workflow_status = AsyncMock(return_value=0)
         mock_record_cls.return_value = record_repo
 
         event_repo = MagicMock()
@@ -1092,6 +1100,7 @@ async def test_run_processing_rate_limit_passes_not_before_to_requeue(
     from apps.api.workers.processing_worker import run_processing
 
     settings = MagicMock()
+    settings.review_ready_buffer_size = 10
     mock_settings.return_value = settings
 
     entry = _make_queue_entry()
@@ -1125,6 +1134,7 @@ async def test_run_processing_rate_limit_passes_not_before_to_requeue(
 
         record_repo = MagicMock()
         record_repo.update_processing_status = AsyncMock()
+        record_repo.count_by_workflow_status = AsyncMock(return_value=0)
         mock_record_cls.return_value = record_repo
 
         event_repo = MagicMock()
@@ -1153,6 +1163,7 @@ async def test_run_processing_rate_limit_resets_processing_status_to_pending(
     from apps.api.workers.processing_worker import run_processing
 
     settings = MagicMock()
+    settings.review_ready_buffer_size = 10
     mock_settings.return_value = settings
 
     stable_id = uuid.uuid4()
@@ -1187,6 +1198,7 @@ async def test_run_processing_rate_limit_resets_processing_status_to_pending(
 
         record_repo = MagicMock()
         record_repo.update_processing_status = AsyncMock()
+        record_repo.count_by_workflow_status = AsyncMock(return_value=0)
         mock_record_cls.return_value = record_repo
 
         event_repo = MagicMock()
@@ -1210,6 +1222,7 @@ async def test_run_processing_rate_limit_no_stable_id_skips_status_reset(
     from apps.api.workers.processing_worker import run_processing
 
     settings = MagicMock()
+    settings.review_ready_buffer_size = 10
     mock_settings.return_value = settings
 
     entry = _make_queue_entry(stable_id=None)
@@ -1243,6 +1256,7 @@ async def test_run_processing_rate_limit_no_stable_id_skips_status_reset(
 
         record_repo = MagicMock()
         record_repo.update_processing_status = AsyncMock()
+        record_repo.count_by_workflow_status = AsyncMock(return_value=0)
         mock_record_cls.return_value = record_repo
 
         event_repo = MagicMock()
@@ -1264,6 +1278,7 @@ async def test_run_processing_rate_limit_does_not_consume_retries(
     from apps.api.workers.processing_worker import run_processing
 
     settings = MagicMock()
+    settings.review_ready_buffer_size = 10
     mock_settings.return_value = settings
 
     stable_id = uuid.uuid4()
@@ -1299,6 +1314,7 @@ async def test_run_processing_rate_limit_does_not_consume_retries(
 
         record_repo = MagicMock()
         record_repo.update_processing_status = AsyncMock()
+        record_repo.count_by_workflow_status = AsyncMock(return_value=0)
         mock_record_cls.return_value = record_repo
 
         event_repo = MagicMock()
@@ -1327,6 +1343,7 @@ async def test_run_processing_rate_limit_queue_unlocked_even_if_side_effects_fai
     from apps.api.workers.processing_worker import run_processing
 
     settings = MagicMock()
+    settings.review_ready_buffer_size = 10
     mock_settings.return_value = settings
 
     stable_id = uuid.uuid4()
@@ -1389,6 +1406,7 @@ async def test_run_processing_rate_limit_event_failure_does_not_lose_queue_unloc
     from apps.api.workers.processing_worker import run_processing
 
     settings = MagicMock()
+    settings.review_ready_buffer_size = 10
     mock_settings.return_value = settings
 
     entry = _make_queue_entry(stable_id=None)
@@ -1423,6 +1441,7 @@ async def test_run_processing_rate_limit_event_failure_does_not_lose_queue_unloc
 
         record_repo = MagicMock()
         record_repo.update_processing_status = AsyncMock()
+        record_repo.count_by_workflow_status = AsyncMock(return_value=0)
         mock_record_cls.return_value = record_repo
 
         event_repo = MagicMock()
