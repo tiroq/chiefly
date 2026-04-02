@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from apps.api.logging import get_logger
 from apps.api.services.review_pause import is_review_paused
 from apps.api.services.telegram_service import TelegramService
-from core.domain.enums import ConfidenceBand, TaskKind
+from core.domain.enums import ConfidenceBand, ReviewSessionStatus, TaskKind
 from core.schemas.llm import TaskClassificationResult
 from db.repositories.review_session_repo import ReviewSessionRepository
 from db.repositories.task_snapshot_repo import TaskSnapshotRepository
@@ -68,7 +68,7 @@ class ReviewQueueService:
                 "queued_review_missing_proposed_changes",
                 session_id=str(next_item.id),
             )
-            next_item.status = "resolved"
+            next_item.status = ReviewSessionStatus.RESOLVED.value
             await session_repo.save(next_item)
             await self._session.commit()
             return await self.send_next()
@@ -113,7 +113,7 @@ class ReviewQueueService:
                 queue_position=1,
             )
         except Exception:
-            next_item.status = "send_failed"
+            next_item.status = ReviewSessionStatus.SEND_FAILED.value
             await session_repo.save(next_item)
             await self._session.commit()
             logger.error(
@@ -123,7 +123,7 @@ class ReviewQueueService:
             )
             raise
 
-        next_item.status = "pending"
+        next_item.status = ReviewSessionStatus.ACTIVE.value
         next_item.telegram_message_id = msg_id
         await session_repo.save(next_item)
         await self._session.commit()
