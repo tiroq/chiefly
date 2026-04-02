@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from apps.api.logging import get_logger
 from apps.api.services.system_event_service import SystemEventService
 from core.domain import notes_codec
+from core.domain.enums import WorkflowStatus
 from db.models.task_record import TaskRecord
 from db.models.task_snapshot import TaskSnapshot as DbTaskSnapshot
 from db.repositories.system_event_repo import SystemEventRepo
@@ -299,7 +300,7 @@ class TaskChangeMonitor:
         return TaskStateCapture(
             stable_id=record.stable_id,
             title=title,
-            processing_status=record.processing_status or "pending",
+            processing_status=record.processing_status or WorkflowStatus.PENDING.value,
             project_id=project_id,
             kind=meta.get("kind") or payload.get("kind"),
             confidence_band=meta.get("confidence"),
