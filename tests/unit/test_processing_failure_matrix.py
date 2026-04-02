@@ -29,6 +29,7 @@ def _make_settings() -> MagicMock:
     settings.llm_base_url = ""
     settings.telegram_bot_token = "bot-token"
     settings.telegram_chat_id = "123"
+    settings.review_ready_buffer_size = 10
     return settings
 
 
