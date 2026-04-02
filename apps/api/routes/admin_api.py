@@ -794,10 +794,12 @@ async def get_processing_queue(
         )
 
     total_pending = await queue_repo.count_pending()
+    total_in_progress = await queue_repo.count_in_progress()
 
     return JSONResponse(
         content={
             "total_pending": total_pending,
+            "total_in_progress": total_in_progress,
             "items": items,
         }
     )
