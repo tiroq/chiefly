@@ -42,6 +42,25 @@ async def run_processing() -> None:
     factory = get_session_factory()
 
     async with factory() as session:
+        # --- Buffer check: stop pre-processing if ready-for-review buffer is full ---
+        record_repo = TaskRecordRepository(session)
+        ready_count = await record_repo.count_by_workflow_status(WorkflowStatus.AWAITING_REVIEW)
+        buffer_target = settings.review_ready_buffer_size
+
+        logger.debug(
+            "review_buffer_status",
+            ready_count=ready_count,
+            buffer_target=buffer_target,
+        )
+
+        if ready_count >= buffer_target:
+            logger.info(
+                "review_buffer_target_reached",
+                ready_count=ready_count,
+                buffer_target=buffer_target,
+            )
+            return
+
         queue_repo = ProcessingQueueRepository(session)
         entry = await queue_repo.claim_next()
         if entry is None:
@@ -385,15 +404,19 @@ async def _process_entry(
     )
     await review_repo.create(review_session)
 
-    logger.info(
-        "processing_status_update",
-        entry_id=str(entry_id),
-        stable_id=str(stable_id),
-        workflow_status=WorkflowStatus.AWAITING_REVIEW,
-    )
     await record_repo.update_processing_status(stable_id, WorkflowStatus.AWAITING_REVIEW)
     await queue_repo.complete(entry_id)
     await session.commit()
+
+    # Log how deep the review buffer is now that this item is ready
+    ready_count = await record_repo.count_by_workflow_status(WorkflowStatus.AWAITING_REVIEW)
+    logger.info(
+        "task_marked_ready_for_review",
+        entry_id=str(entry_id),
+        stable_id=str(stable_id),
+        ready_count=ready_count,
+        buffer_target=settings.review_ready_buffer_size,
+    )
 
     # --- Phase 3h: Trigger Telegram send ---
     logger.info(

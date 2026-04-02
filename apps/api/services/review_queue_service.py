@@ -140,6 +140,14 @@ class ReviewQueueService:
             session_id=str(next_item.id),
             queued_remaining=queued_count,
         )
+
+        # Signal that the review buffer consumed an item — background processing
+        # will see AWAITING_REVIEW count decrease and refill on its next tick.
+        logger.info(
+            "review_buffer_refill_started",
+            queued_remaining=queued_count,
+        )
+
         return SendNextResult.SENT
 
     async def get_queue_status(self) -> QueueStatus:
