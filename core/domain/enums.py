@@ -78,5 +78,15 @@ class WorkflowStatus(StrEnum):
     PROCESSING = "processing"
     AWAITING_REVIEW = "awaiting_review"
     APPLIED = "applied"
+    FAILED = "failed"
+    DISCARDED = "discarded"
+
+
+class ReviewSessionStatus(StrEnum):
+    QUEUED = "queued"           # processed, waiting in review queue (not yet shown)
+    ACTIVE = "active"           # actively shown in Telegram / Mini App (was "pending")
+    SEND_FAILED = "send_failed"  # failed to deliver to Telegram (retryable)
+    SKIPPED = "skipped"         # user chose to skip
+    RESOLVED = "resolved"       # user confirmed or discarded (terminal)
     DISCARDED = "discarded"
     FAILED = "failed"
