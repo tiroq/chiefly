@@ -344,6 +344,7 @@ def _setup_process_entry_mocks(
     record_repo.update_processing_status = AsyncMock()
     record_repo.update_state = AsyncMock()
     record_repo.update_pointer = AsyncMock()
+    record_repo.count_by_workflow_status = AsyncMock(return_value=1)
     patches["TaskRecordRepository"] = record_repo
     mocks["record_repo"] = record_repo
 
