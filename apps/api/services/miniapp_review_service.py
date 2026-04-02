@@ -95,7 +95,7 @@ class MiniAppReviewService:
         filtered: list[TelegramReviewSession]
         if status_filter == "queued":
             filtered = [rs for rs in sessions if rs.status == ReviewSessionStatus.QUEUED.value]
-        elif status_filter in ("pending", "active"):
+        elif status_filter == "active":
             filtered = [rs for rs in sessions if rs.status == ReviewSessionStatus.ACTIVE.value]
         elif status_filter == "ambiguous":
             filtered = [
