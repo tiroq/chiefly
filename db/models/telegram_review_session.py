@@ -20,7 +20,7 @@ class TelegramReviewSession(Base):
     )
     telegram_chat_id: Mapped[str] = mapped_column(String(100), nullable=False)
     telegram_message_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    status: Mapped[str] = mapped_column(String(50), nullable=False, default="pending")
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default="queued")
     base_snapshot_id: Mapped[int | None] = mapped_column(
         BigInteger,
         ForeignKey("task_snapshots.id", ondelete="SET NULL"),
