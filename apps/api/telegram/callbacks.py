@@ -22,7 +22,7 @@ from apps.api.telegram.keyboards import (
     discard_confirm_keyboard,
     settings_keyboard,
 )
-from core.domain.enums import ConfidenceBand, ReviewAction, TaskKind, WorkflowStatus
+from core.domain.enums import ConfidenceBand, ReviewAction, ReviewSessionStatus, TaskKind, WorkflowStatus
 from core.domain.exceptions import TaskNotFoundError
 from core.schemas.telegram import (
     CallbackPayload,
@@ -243,7 +243,7 @@ async def handle_confirm(callback: CallbackQuery):
 
             await record_repo.update_processing_status(stable_id, WorkflowStatus.APPLIED)
 
-            review_session.status = "resolved"
+            review_session.status = ReviewSessionStatus.RESOLVED.value
             review_session.resolved_at = now
             await session_repo.save(review_session)
 
@@ -345,7 +345,7 @@ async def handle_discard_confirm(callback: CallbackQuery):
 
                 await record_repo.update_processing_status(stable_id, WorkflowStatus.DISCARDED)
 
-            review_session.status = "resolved"
+            review_session.status = ReviewSessionStatus.RESOLVED.value
             review_session.resolved_at = now
             await session_repo.save(review_session)
 
@@ -403,7 +403,7 @@ async def handle_skip(callback: CallbackQuery):
                 await callback.answer("Task not found!", show_alert=True)
                 return
 
-            review_session.status = "skipped"
+            review_session.status = ReviewSessionStatus.SKIPPED.value
             await session_repo.save(review_session)
             await session.commit()
 
