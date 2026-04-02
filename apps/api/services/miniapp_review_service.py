@@ -12,7 +12,7 @@ from apps.api.logging import get_logger
 from apps.api.services.google_tasks_service import GoogleTasksService
 from apps.api.services.llm_service import LLMService
 from apps.api.services.model_settings_service import get_effective_llm_config
-from core.domain.enums import ReviewAction, TaskKind, WorkflowStatus
+from core.domain.enums import ReviewAction, ReviewSessionStatus, TaskKind, WorkflowStatus
 from core.utils.datetime import utcnow
 from db.models.task_revision import TaskRevision
 from db.models.telegram_review_session import TelegramReviewSession
@@ -24,7 +24,7 @@ from db.repositories.task_snapshot_repo import TaskSnapshotRepository
 
 logger = get_logger(__name__)
 
-_REVIEWABLE_STATUSES = ["queued", "pending"]
+_REVIEWABLE_STATUSES = [ReviewSessionStatus.QUEUED.value, ReviewSessionStatus.ACTIVE.value]
 
 
 class QueueItemData(TypedDict):
@@ -41,7 +41,7 @@ class QueueItemData(TypedDict):
 class QueueCounts(TypedDict):
     total: int
     queued: int
-    pending: int
+    active: int
 
 
 class ReviewDetailData(TypedDict):
@@ -84,19 +84,19 @@ class MiniAppReviewService:
         result = await self._session.execute(stmt)
         sessions = list(result.scalars().all())
 
-        queued_count = sum(1 for rs in sessions if rs.status == "queued")
-        pending_count = sum(1 for rs in sessions if rs.status == "pending")
+        queued_count = sum(1 for rs in sessions if rs.status == ReviewSessionStatus.QUEUED.value)
+        active_count = sum(1 for rs in sessions if rs.status == ReviewSessionStatus.ACTIVE.value)
         counts: QueueCounts = {
-            "total": queued_count + pending_count,
+            "total": queued_count + active_count,
             "queued": queued_count,
-            "pending": pending_count,
+            "active": active_count,
         }
 
         filtered: list[TelegramReviewSession]
         if status_filter == "queued":
-            filtered = [rs for rs in sessions if rs.status == "queued"]
-        elif status_filter == "pending":
-            filtered = [rs for rs in sessions if rs.status == "pending"]
+            filtered = [rs for rs in sessions if rs.status == ReviewSessionStatus.QUEUED.value]
+        elif status_filter in ("pending", "active"):
+            filtered = [rs for rs in sessions if rs.status == ReviewSessionStatus.ACTIVE.value]
         elif status_filter == "ambiguous":
             filtered = [
                 rs
@@ -287,7 +287,7 @@ class MiniAppReviewService:
         )
         await record_repo.update_processing_status(stable_id, WorkflowStatus.APPLIED)
 
-        review_session.status = "resolved"
+        review_session.status = ReviewSessionStatus.RESOLVED.value
         review_session.resolved_at = now
         await session_repo.save(review_session)
         await self._session.commit()
@@ -335,7 +335,7 @@ class MiniAppReviewService:
         await revision_repo.create(discard_revision)
         await record_repo.update_processing_status(stable_id, WorkflowStatus.DISCARDED)
 
-        review_session.status = "resolved"
+        review_session.status = ReviewSessionStatus.RESOLVED.value
         review_session.resolved_at = now
         await session_repo.save(review_session)
         await self._session.commit()
