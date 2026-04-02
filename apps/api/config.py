@@ -74,6 +74,10 @@ class Settings(BaseSettings):
     project_sync_cron: str = "0 * * * *"
     timezone: str = "UTC"
 
+    # Buffered preprocessing: keep this many tasks in AWAITING_REVIEW state
+    # so the user rarely has to wait for processing to complete before reviewing.
+    review_ready_buffer_size: int = 10
+
     admin_token: str = "admin"
 
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
