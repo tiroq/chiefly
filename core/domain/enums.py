@@ -88,5 +88,3 @@ class ReviewSessionStatus(StrEnum):
     SEND_FAILED = "send_failed"  # failed to deliver to Telegram (retryable)
     SKIPPED = "skipped"         # user chose to skip
     RESOLVED = "resolved"       # user confirmed or discarded (terminal)
-    DISCARDED = "discarded"
-    FAILED = "failed"
