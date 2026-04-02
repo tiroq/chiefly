@@ -74,7 +74,7 @@ async def proposed_task(db_session: AsyncSession) -> TaskRecord:
         stable_id=task.stable_id,
         telegram_chat_id="123456",
         telegram_message_id=100,
-        status="pending",
+        status="active",
         created_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
     )
     db_session.add(review_session)

@@ -307,7 +307,7 @@ class TestFullPipelineE2E:
         session_repo = ReviewSessionRepository(db_session)
         review = await session_repo.get_active_by_stable_id(record.stable_id)
         assert review is not None
-        assert review.status == "pending"
+        assert review.status == "active"
         assert review.telegram_message_id == 42
         assert review.proposed_changes is not None
         assert review.proposed_changes["normalized_title"] == NORMALIZED_TITLE

@@ -352,14 +352,14 @@ class TestReviewSessionRepository:
             stable_id=task.stable_id,
             telegram_chat_id="123",
             telegram_message_id=1,
-            status="pending",
+            status="active",
         )
         await repo.create(session_obj)
         await db_session.commit()
 
         active = await repo.get_active_by_stable_id(task.stable_id)
         assert active is not None
-        assert active.status == "pending"
+        assert active.status == "active"
 
     @pytest.mark.asyncio
     async def test_resolved_session_not_returned_as_active(self, db_session):

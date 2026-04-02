@@ -131,27 +131,34 @@ def _make_snapshot(**overrides):
 @patch("apps.api.workers.processing_worker.get_session_factory")
 @patch("apps.api.workers.processing_worker.get_settings")
 @pytest.mark.asyncio
-async def test_run_processing_skips_when_active_review(mock_settings, mock_factory):
+async def test_run_processing_proceeds_even_with_active_review(mock_settings, mock_factory):
+    """Processing must NOT be blocked by an active Telegram review.
+    The review gate was removed to allow buffered pre-processing.
+    Processing creates queued sessions; only send_next() is gated on active review.
+    """
     from apps.api.workers.processing_worker import run_processing
 
     mock_settings.return_value = MagicMock()
 
-    mock_session = MagicMock()
-    mock_session.commit = AsyncMock()
+    def make_session():
+        mock_session = MagicMock()
+        mock_session.commit = AsyncMock()
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        return ctx
 
-    ctx = MagicMock()
-    ctx.__aenter__ = AsyncMock(return_value=mock_session)
-    ctx.__aexit__ = AsyncMock(return_value=False)
-    mock_factory.return_value = MagicMock(return_value=ctx)
+    mock_factory.return_value = MagicMock(side_effect=make_session)
 
-    with patch("apps.api.workers.processing_worker.ReviewSessionRepository") as mock_review_cls:
-        review_repo = MagicMock()
-        review_repo.has_active_review = AsyncMock(return_value=True)
-        mock_review_cls.return_value = review_repo
+    with patch("apps.api.workers.processing_worker.ProcessingQueueRepository") as mock_queue_cls:
+        queue_repo = MagicMock()
+        queue_repo.claim_next = AsyncMock(return_value=None)
+        mock_queue_cls.return_value = queue_repo
 
         await run_processing()
 
-        review_repo.has_active_review.assert_awaited_once()
+        # Processing attempted to claim work — the review gate no longer blocks it
+        queue_repo.claim_next.assert_awaited_once()
 
 
 @patch("apps.api.workers.processing_worker.get_session_factory")
@@ -172,14 +179,7 @@ async def test_run_processing_returns_when_queue_empty(mock_settings, mock_facto
 
     mock_factory.return_value = MagicMock(side_effect=make_session)
 
-    with (
-        patch("apps.api.workers.processing_worker.ReviewSessionRepository") as mock_review_cls,
-        patch("apps.api.workers.processing_worker.ProcessingQueueRepository") as mock_queue_cls,
-    ):
-        review_repo = MagicMock()
-        review_repo.has_active_review = AsyncMock(return_value=False)
-        mock_review_cls.return_value = review_repo
-
+    with patch("apps.api.workers.processing_worker.ProcessingQueueRepository") as mock_queue_cls:
         queue_repo = MagicMock()
         queue_repo.claim_next = AsyncMock(return_value=None)
         mock_queue_cls.return_value = queue_repo
@@ -213,14 +213,7 @@ async def test_run_processing_calls_process_entry(mock_settings, mock_factory, m
     mock_process_entry.return_value = None
     mock_process_entry.side_effect = None
 
-    with (
-        patch("apps.api.workers.processing_worker.ReviewSessionRepository") as mock_review_cls,
-        patch("apps.api.workers.processing_worker.ProcessingQueueRepository") as mock_queue_cls,
-    ):
-        review_repo = MagicMock()
-        review_repo.has_active_review = AsyncMock(return_value=False)
-        mock_review_cls.return_value = review_repo
-
+    with patch("apps.api.workers.processing_worker.ProcessingQueueRepository") as mock_queue_cls:
         queue_repo = MagicMock()
         queue_repo.claim_next = AsyncMock(return_value=entry)
         mock_queue_cls.return_value = queue_repo

@@ -82,7 +82,7 @@ async def task_with_session(
         stable_id=task.stable_id,
         telegram_chat_id="123456",
         telegram_message_id=100,
-        status="pending",
+        status="active",
         created_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
     )
     db_session.add(review_session)
@@ -102,11 +102,11 @@ async def test_edit_title_creates_revision(db_session, task_with_session):
     session_repo = ReviewSessionRepository(db_session)
     revision_svc = RevisionService(db_session)
 
-    review_session.status = "pending"
+    review_session.status = "active"
     await session_repo.save(review_session)
     active_session = await session_repo.get_active_by_stable_id(task.stable_id)
     assert active_session is not None
-    assert active_session.status == "pending"
+    assert active_session.status == "active"
 
     new_title = "Updated Title After Edit"
 
@@ -125,14 +125,14 @@ async def test_edit_title_creates_revision(db_session, task_with_session):
         user_notes=f"Title changed to: {new_title}",
     )
 
-    review_session.status = "pending"
+    review_session.status = "active"
     await session_repo.save(review_session)
     await db_session.commit()
 
     # Verify
     active_session = await session_repo.get_active_by_stable_id(task.stable_id)
     assert active_session is not None
-    assert active_session.status == "pending"
+    assert active_session.status == "active"
 
     rev_repo = TaskRevisionRepository(db_session)
     revisions: list[TaskRevision] = await rev_repo.list_by_stable_id(task.stable_id)

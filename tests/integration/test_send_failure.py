@@ -138,7 +138,7 @@ class TestTelegramSendFailure:
         repo = ReviewSessionRepository(db_session)
         updated = await repo.get_by_id(session.id)
         assert updated is not None
-        assert updated.status == "pending"
+        assert updated.status == "active"
         assert updated.telegram_message_id == 42
 
     @pytest.mark.asyncio

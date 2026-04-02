@@ -34,7 +34,7 @@ class TestMiniAppReviewServiceQueue:
             ),
             SimpleNamespace(
                 stable_id=uuid.uuid4(),
-                status="pending",
+                status="active",
                 proposed_changes={"normalized_title": "Plan", "kind": "idea"},
                 created_at=datetime.now(timezone.utc),
             ),
@@ -49,7 +49,7 @@ class TestMiniAppReviewServiceQueue:
 
         items, counts = await service.get_queue_items()
 
-        assert counts == {"total": 2, "queued": 1, "pending": 1}
+        assert counts == {"total": 2, "queued": 1, "active": 1}
         assert items[0]["stable_id"] == stable_id
         assert items[0]["raw_text"] == "Raw input"
         assert items[0]["normalized_title"] == "Buy milk"
@@ -66,7 +66,7 @@ class TestMiniAppReviewServiceQueue:
             ),
             SimpleNamespace(
                 stable_id=uuid.uuid4(),
-                status="pending",
+                status="active",
                 proposed_changes={"normalized_title": "B", "kind": "task"},
                 created_at=datetime.now(timezone.utc),
             ),

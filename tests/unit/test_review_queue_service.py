@@ -171,7 +171,7 @@ async def test_send_next_reads_proposed_changes_and_sends_proposal(
     result = await service.send_next()
 
     assert result == SendNextResult.SENT
-    assert queued_session.status == "pending"
+    assert queued_session.status == "active"
     assert queued_session.telegram_message_id == 777
     session_repo.save.assert_awaited_once_with(queued_session)
     mock_session.commit.assert_awaited_once()
@@ -259,7 +259,7 @@ async def test_send_next_skips_session_with_empty_proposed_changes(
 
     assert result == SendNextResult.SENT
     assert empty_session.status == "resolved"
-    assert valid_session.status == "pending"
+    assert valid_session.status == "active"
     assert session_repo.save.await_count == 2
     assert mock_session.commit.await_count == 2
     mock_telegram.send_proposal.assert_awaited_once()
