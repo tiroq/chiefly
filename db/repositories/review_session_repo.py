@@ -58,8 +58,8 @@ class ReviewSessionRepository:
         await self._session.flush()
         return review_session
 
-    async def count_pending(self) -> int:
-        """Count sessions that are unresolved (queued + active)."""
+    async def count_unresolved(self) -> int:
+        """Count sessions that are unresolved (queued + active, i.e. the full review backlog)."""
         result = await self._session.execute(
             select(func.count(TelegramReviewSession.id)).where(
                 TelegramReviewSession.status.in_([
@@ -78,6 +78,16 @@ class ReviewSessionRepository:
             )
         )
         return result.scalar() or 0
+
+    async def get_active_review_session(self) -> TelegramReviewSession | None:
+        """Return the review session currently active (visible) in Telegram, if any."""
+        result = await self._session.execute(
+            select(TelegramReviewSession)
+            .where(TelegramReviewSession.status == ReviewSessionStatus.ACTIVE.value)
+            .order_by(TelegramReviewSession.created_at.desc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
 
     async def get_next_queued(self) -> TelegramReviewSession | None:
         result = await self._session.execute(

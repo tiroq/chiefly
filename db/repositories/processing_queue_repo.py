@@ -192,9 +192,31 @@ class ProcessingQueueRepository:
         return result.scalar_one_or_none()
 
     async def count_pending(self) -> int:
+        """Count queue entries waiting to be claimed (status=PENDING)."""
         result = await self._session.execute(
             select(func.count(TaskProcessingQueue.id)).where(
                 TaskProcessingQueue.processing_status == ProcessingStatus.PENDING
+            )
+        )
+        return result.scalar() or 0
+
+    async def count_in_progress(self) -> int:
+        """Count queue entries currently being worked on (LOCKED or PROCESSING)."""
+        result = await self._session.execute(
+            select(func.count(TaskProcessingQueue.id)).where(
+                TaskProcessingQueue.processing_status.in_([
+                    ProcessingStatus.LOCKED,
+                    ProcessingStatus.PROCESSING,
+                ])
+            )
+        )
+        return result.scalar() or 0
+
+    async def count_failed(self) -> int:
+        """Count queue entries that have terminally failed (all retries exhausted)."""
+        result = await self._session.execute(
+            select(func.count(TaskProcessingQueue.id)).where(
+                TaskProcessingQueue.processing_status == ProcessingStatus.FAILED
             )
         )
         return result.scalar() or 0
@@ -203,6 +225,49 @@ class ProcessingQueueRepository:
         result = await self._session.execute(
             select(TaskProcessingQueue)
             .where(TaskProcessingQueue.processing_status == ProcessingStatus.PENDING)
+            .order_by(TaskProcessingQueue.created_at.asc())
+            .limit(limit)
+        )
+        return list(result.scalars().all())
+
+    async def list_in_progress(self, limit: int = 20) -> list[TaskProcessingQueue]:
+        """List entries currently being worked on (LOCKED or PROCESSING)."""
+        result = await self._session.execute(
+            select(TaskProcessingQueue)
+            .where(
+                TaskProcessingQueue.processing_status.in_([
+                    ProcessingStatus.LOCKED,
+                    ProcessingStatus.PROCESSING,
+                ])
+            )
+            .order_by(TaskProcessingQueue.locked_at.asc())
+            .limit(limit)
+        )
+        return list(result.scalars().all())
+
+    async def list_failed(self, limit: int = 20) -> list[TaskProcessingQueue]:
+        """List entries that have terminally failed (all retries exhausted)."""
+        result = await self._session.execute(
+            select(TaskProcessingQueue)
+            .where(TaskProcessingQueue.processing_status == ProcessingStatus.FAILED)
+            .order_by(TaskProcessingQueue.updated_at.desc())
+            .limit(limit)
+        )
+        return list(result.scalars().all())
+
+    async def list_retry_pending(self, limit: int = 20) -> list[TaskProcessingQueue]:
+        """List entries that failed at least once and are queued for retry (PENDING with retry_count > 0)."""
+        now = datetime.now(tz=timezone.utc)
+        result = await self._session.execute(
+            select(TaskProcessingQueue)
+            .where(
+                TaskProcessingQueue.processing_status == ProcessingStatus.PENDING,
+                TaskProcessingQueue.retry_count > 0,
+                or_(
+                    TaskProcessingQueue.not_before.is_(None),
+                    TaskProcessingQueue.not_before <= now,
+                ),
+            )
             .order_by(TaskProcessingQueue.created_at.asc())
             .limit(limit)
         )

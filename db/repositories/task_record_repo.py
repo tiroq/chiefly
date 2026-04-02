@@ -157,6 +157,15 @@ class TaskRecordRepository:
         )
         await self._session.flush()
 
+    async def count_by_workflow_status(self, status: WorkflowStatus) -> int:
+        """Direct status count without snapshot join — efficient for buffer/monitoring queries."""
+        result = await self._session.execute(
+            select(func.count(TaskRecord.stable_id)).where(
+                TaskRecord.processing_status == status.value
+            )
+        )
+        return result.scalar() or 0
+
     async def list_filtered(
         self,
         processing_status: WorkflowStatus | None = None,
