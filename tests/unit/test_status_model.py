@@ -122,13 +122,18 @@ async def test_processing_worker_does_not_call_has_active_review(mock_settings, 
     independent of review queue state."""
     from apps.api.workers.processing_worker import run_processing
 
-    mock_settings.return_value = MagicMock()
+    mock_settings.return_value = MagicMock(review_ready_buffer_size=10)
     mock_factory.return_value = MagicMock(return_value=_make_session_ctx())
 
     with (
+        patch("apps.api.workers.processing_worker.TaskRecordRepository") as mock_record_cls,
         patch("apps.api.workers.processing_worker.ProcessingQueueRepository") as mock_queue_cls,
         patch("apps.api.workers.processing_worker.ReviewSessionRepository") as mock_review_cls,
     ):
+        record_repo = MagicMock()
+        record_repo.count_by_workflow_status = AsyncMock(return_value=0)
+        mock_record_cls.return_value = record_repo
+
         queue_repo = MagicMock()
         queue_repo.claim_next = AsyncMock(return_value=None)
         mock_queue_cls.return_value = queue_repo
@@ -155,10 +160,17 @@ async def test_processing_worker_claims_work_regardless_of_active_review(
     the processing worker must still try to claim the next queue item."""
     from apps.api.workers.processing_worker import run_processing
 
-    mock_settings.return_value = MagicMock()
+    mock_settings.return_value = MagicMock(review_ready_buffer_size=10)
     mock_factory.return_value = MagicMock(return_value=_make_session_ctx())
 
-    with patch("apps.api.workers.processing_worker.ProcessingQueueRepository") as mock_queue_cls:
+    with (
+        patch("apps.api.workers.processing_worker.TaskRecordRepository") as mock_record_cls,
+        patch("apps.api.workers.processing_worker.ProcessingQueueRepository") as mock_queue_cls,
+    ):
+        record_repo = MagicMock()
+        record_repo.count_by_workflow_status = AsyncMock(return_value=0)
+        mock_record_cls.return_value = record_repo
+
         queue_repo = MagicMock()
         queue_repo.claim_next = AsyncMock(return_value=None)
         mock_queue_cls.return_value = queue_repo

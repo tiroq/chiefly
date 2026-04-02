@@ -1378,6 +1378,7 @@ async def test_run_processing_rate_limit_queue_unlocked_even_if_side_effects_fai
         mock_queue_cls.return_value = queue_repo
 
         record_repo = MagicMock()
+        record_repo.count_by_workflow_status = AsyncMock(return_value=0)
         record_repo.update_processing_status = AsyncMock(
             side_effect=RuntimeError("DB connection lost")
         )
