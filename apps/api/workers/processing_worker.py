@@ -14,6 +14,7 @@ from apps.api.services.revision_service import RevisionService
 from apps.api.services.telegram_service import TelegramService
 from core.domain import notes_codec
 from core.domain.enums import (
+    ReviewSessionStatus,
     TaskRecordState,
     WorkflowStatus,
 )
@@ -383,7 +384,7 @@ async def _process_entry(
         stable_id=stable_id,
         telegram_chat_id=settings.telegram_chat_id,
         telegram_message_id=0,
-        status="queued",
+        status=ReviewSessionStatus.QUEUED.value,
         base_snapshot_id=latest_snapshot.id if latest_snapshot else None,
         base_google_updated=patched.updated,
         proposed_changes=proposed_changes,
@@ -419,7 +420,7 @@ async def _process_entry(
             stable_id=str(stable_id),
             error=str(send_err),
         )
-        review_session.status = "send_failed"
+        review_session.status = ReviewSessionStatus.SEND_FAILED.value
         await review_repo.save(review_session)
 
         event = SystemEvent(
