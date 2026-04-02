@@ -138,7 +138,7 @@ async def test_run_processing_proceeds_even_with_active_review(mock_settings, mo
     """
     from apps.api.workers.processing_worker import run_processing
 
-    mock_settings.return_value = MagicMock()
+    mock_settings.return_value = MagicMock(review_ready_buffer_size=10)
 
     def make_session():
         mock_session = MagicMock()
@@ -150,7 +150,14 @@ async def test_run_processing_proceeds_even_with_active_review(mock_settings, mo
 
     mock_factory.return_value = MagicMock(side_effect=make_session)
 
-    with patch("apps.api.workers.processing_worker.ProcessingQueueRepository") as mock_queue_cls:
+    with (
+        patch("apps.api.workers.processing_worker.TaskRecordRepository") as mock_record_cls,
+        patch("apps.api.workers.processing_worker.ProcessingQueueRepository") as mock_queue_cls,
+    ):
+        record_repo = MagicMock()
+        record_repo.count_by_workflow_status = AsyncMock(return_value=0)
+        mock_record_cls.return_value = record_repo
+
         queue_repo = MagicMock()
         queue_repo.claim_next = AsyncMock(return_value=None)
         mock_queue_cls.return_value = queue_repo
@@ -252,6 +259,7 @@ async def test_run_processing_fails_entry_on_exception(
     from apps.api.workers.processing_worker import run_processing
 
     settings = MagicMock()
+    settings.review_ready_buffer_size = 10
     mock_settings.return_value = settings
 
     entry = _make_queue_entry()
@@ -285,6 +293,7 @@ async def test_run_processing_fails_entry_on_exception(
 
         record_repo = MagicMock()
         record_repo.update_processing_status = update_status_mock
+        record_repo.count_by_workflow_status = AsyncMock(return_value=0)
         mock_record_cls.return_value = record_repo
 
         await run_processing()
