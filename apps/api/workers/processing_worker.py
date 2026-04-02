@@ -42,12 +42,6 @@ async def run_processing() -> None:
     factory = get_session_factory()
 
     async with factory() as session:
-        review_repo = ReviewSessionRepository(session)
-        if await review_repo.has_active_review():
-            logger.debug("processing_worker_skip_active_review")
-            return
-
-    async with factory() as session:
         queue_repo = ProcessingQueueRepository(session)
         entry = await queue_repo.claim_next()
         if entry is None:
