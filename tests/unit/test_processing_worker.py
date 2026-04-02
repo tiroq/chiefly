@@ -1452,3 +1452,200 @@ async def test_run_processing_rate_limit_event_failure_does_not_lose_queue_unloc
         await run_processing()
 
         requeue_mock.assert_awaited_once()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Buffered pre-processing — buffer gate tests
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _make_buffered_run_processing_mocks(ready_count: int, buffer_size: int = 10):
+    """Return (mock_settings, mock_factory, mock_record_cls, mock_queue_cls) configured
+    for buffer-gate unit tests of run_processing()."""
+    settings = MagicMock()
+    settings.review_ready_buffer_size = buffer_size
+
+    mock_session = MagicMock()
+    mock_session.commit = AsyncMock()
+    ctx = MagicMock()
+    ctx.__aenter__ = AsyncMock(return_value=mock_session)
+    ctx.__aexit__ = AsyncMock(return_value=False)
+    factory = MagicMock(return_value=ctx)
+
+    return settings, factory
+
+
+@patch("apps.api.workers.processing_worker.get_session_factory")
+@patch("apps.api.workers.processing_worker.get_settings")
+@pytest.mark.asyncio
+async def test_buffer_below_target_allows_claim(mock_settings, mock_factory):
+    """When ready_count < buffer_target, claim_next() must be called."""
+    from apps.api.workers.processing_worker import run_processing
+
+    settings, factory = _make_buffered_run_processing_mocks(ready_count=5, buffer_size=10)
+    mock_settings.return_value = settings
+    mock_factory.return_value = factory
+
+    with (
+        patch("apps.api.workers.processing_worker.TaskRecordRepository") as mock_record_cls,
+        patch("apps.api.workers.processing_worker.ProcessingQueueRepository") as mock_queue_cls,
+    ):
+        record_repo = MagicMock()
+        record_repo.count_by_workflow_status = AsyncMock(return_value=5)
+        mock_record_cls.return_value = record_repo
+
+        queue_repo = MagicMock()
+        queue_repo.claim_next = AsyncMock(return_value=None)
+        mock_queue_cls.return_value = queue_repo
+
+        await run_processing()
+
+        queue_repo.claim_next.assert_awaited_once()
+
+
+@patch("apps.api.workers.processing_worker.get_session_factory")
+@patch("apps.api.workers.processing_worker.get_settings")
+@pytest.mark.asyncio
+async def test_buffer_at_target_skips_claim(mock_settings, mock_factory):
+    """When ready_count == buffer_target, claim_next() must NOT be called."""
+    from apps.api.workers.processing_worker import run_processing
+
+    settings, factory = _make_buffered_run_processing_mocks(ready_count=10, buffer_size=10)
+    mock_settings.return_value = settings
+    mock_factory.return_value = factory
+
+    with (
+        patch("apps.api.workers.processing_worker.TaskRecordRepository") as mock_record_cls,
+        patch("apps.api.workers.processing_worker.ProcessingQueueRepository") as mock_queue_cls,
+    ):
+        record_repo = MagicMock()
+        record_repo.count_by_workflow_status = AsyncMock(return_value=10)
+        mock_record_cls.return_value = record_repo
+
+        queue_repo = MagicMock()
+        queue_repo.claim_next = AsyncMock(return_value=None)
+        mock_queue_cls.return_value = queue_repo
+
+        await run_processing()
+
+        queue_repo.claim_next.assert_not_called()
+
+
+@patch("apps.api.workers.processing_worker.get_session_factory")
+@patch("apps.api.workers.processing_worker.get_settings")
+@pytest.mark.asyncio
+async def test_buffer_above_target_skips_claim(mock_settings, mock_factory):
+    """When ready_count > buffer_target, claim_next() must NOT be called."""
+    from apps.api.workers.processing_worker import run_processing
+
+    settings, factory = _make_buffered_run_processing_mocks(ready_count=15, buffer_size=10)
+    mock_settings.return_value = settings
+    mock_factory.return_value = factory
+
+    with (
+        patch("apps.api.workers.processing_worker.TaskRecordRepository") as mock_record_cls,
+        patch("apps.api.workers.processing_worker.ProcessingQueueRepository") as mock_queue_cls,
+    ):
+        record_repo = MagicMock()
+        record_repo.count_by_workflow_status = AsyncMock(return_value=15)
+        mock_record_cls.return_value = record_repo
+
+        queue_repo = MagicMock()
+        queue_repo.claim_next = AsyncMock(return_value=None)
+        mock_queue_cls.return_value = queue_repo
+
+        await run_processing()
+
+        queue_repo.claim_next.assert_not_called()
+
+
+@patch("apps.api.workers.processing_worker.get_session_factory")
+@patch("apps.api.workers.processing_worker.get_settings")
+@pytest.mark.asyncio
+async def test_buffer_zero_ready_always_claims(mock_settings, mock_factory):
+    """With zero tasks pending review the buffer is empty — always claims."""
+    from apps.api.workers.processing_worker import run_processing
+
+    settings, factory = _make_buffered_run_processing_mocks(ready_count=0, buffer_size=10)
+    mock_settings.return_value = settings
+    mock_factory.return_value = factory
+
+    with (
+        patch("apps.api.workers.processing_worker.TaskRecordRepository") as mock_record_cls,
+        patch("apps.api.workers.processing_worker.ProcessingQueueRepository") as mock_queue_cls,
+    ):
+        record_repo = MagicMock()
+        record_repo.count_by_workflow_status = AsyncMock(return_value=0)
+        mock_record_cls.return_value = record_repo
+
+        queue_repo = MagicMock()
+        queue_repo.claim_next = AsyncMock(return_value=None)
+        mock_queue_cls.return_value = queue_repo
+
+        await run_processing()
+
+        queue_repo.claim_next.assert_awaited_once()
+
+
+@patch("apps.api.workers.processing_worker.get_session_factory")
+@patch("apps.api.workers.processing_worker.get_settings")
+@pytest.mark.asyncio
+async def test_buffer_size_one_allows_claim_when_empty(mock_settings, mock_factory):
+    """Custom buffer_size=1 with 0 ready tasks — must claim."""
+    from apps.api.workers.processing_worker import run_processing
+
+    settings, factory = _make_buffered_run_processing_mocks(ready_count=0, buffer_size=1)
+    mock_settings.return_value = settings
+    mock_factory.return_value = factory
+
+    with (
+        patch("apps.api.workers.processing_worker.TaskRecordRepository") as mock_record_cls,
+        patch("apps.api.workers.processing_worker.ProcessingQueueRepository") as mock_queue_cls,
+    ):
+        record_repo = MagicMock()
+        record_repo.count_by_workflow_status = AsyncMock(return_value=0)
+        mock_record_cls.return_value = record_repo
+
+        queue_repo = MagicMock()
+        queue_repo.claim_next = AsyncMock(return_value=None)
+        mock_queue_cls.return_value = queue_repo
+
+        await run_processing()
+
+        queue_repo.claim_next.assert_awaited_once()
+
+
+@patch("apps.api.workers.processing_worker.get_session_factory")
+@patch("apps.api.workers.processing_worker.get_settings")
+@pytest.mark.asyncio
+async def test_buffer_size_one_skips_claim_when_full(mock_settings, mock_factory):
+    """Custom buffer_size=1 with 1 ready task — buffer is saturated, must skip."""
+    from apps.api.workers.processing_worker import run_processing
+
+    settings, factory = _make_buffered_run_processing_mocks(ready_count=1, buffer_size=1)
+    mock_settings.return_value = settings
+    mock_factory.return_value = factory
+
+    with (
+        patch("apps.api.workers.processing_worker.TaskRecordRepository") as mock_record_cls,
+        patch("apps.api.workers.processing_worker.ProcessingQueueRepository") as mock_queue_cls,
+    ):
+        record_repo = MagicMock()
+        record_repo.count_by_workflow_status = AsyncMock(return_value=1)
+        mock_record_cls.return_value = record_repo
+
+        queue_repo = MagicMock()
+        queue_repo.claim_next = AsyncMock(return_value=None)
+        mock_queue_cls.return_value = queue_repo
+
+        await run_processing()
+
+        queue_repo.claim_next.assert_not_called()
+
+
+def test_review_ready_buffer_size_default():
+    """review_ready_buffer_size must default to 10 in Settings."""
+    from apps.api.config import Settings
+
+    s = Settings()
+    assert s.review_ready_buffer_size == 10
