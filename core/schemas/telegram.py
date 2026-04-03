@@ -75,24 +75,6 @@ class DisambiguationPayload(BaseModel):
         return cls(task_id=task_id, option_index=int(idx))
 
 
-class DraftActionPayload(BaseModel):
-    """Callback payload for draft message actions (use, shorter, formal)."""
-
-    action: str  # "draft_use", "draft_shorter", "draft_formal"
-    task_id: str
-
-    def encode(self) -> str:
-        return f"{self.action}:{self.task_id}"
-
-    @classmethod
-    def decode(cls, data: str) -> "DraftActionPayload":
-        parts = data.split(":", 1)
-        if len(parts) != 2:
-            raise ValueError(f"Invalid draft callback data: {data!r}")
-        action, task_id = parts
-        return cls(action=action, task_id=task_id)
-
-
 class QueueActionPayload(BaseModel):
     """Callback payload for queue actions (start, batch, ambiguous, pause)."""
 

@@ -20,7 +20,7 @@ def main_menu_keyboard() -> ReplyKeyboardMarkup:
         keyboard=[
             [KeyboardButton(text="📋 Review Queue"), KeyboardButton(text="▶️ Next Item")],
             [KeyboardButton(text="📬 Backlog"), KeyboardButton(text="📅 Today")],
-            [KeyboardButton(text="📁 Projects"), KeyboardButton(text="✏️ Draft")],
+            [KeyboardButton(text="📁 Projects")],
             [KeyboardButton(text="⚙️ Settings"), KeyboardButton(text="❓ Help")],
         ],
         resize_keyboard=True,
@@ -115,13 +115,6 @@ def settings_keyboard(settings: dict[str, bool | int]) -> InlineKeyboardMarkup:
         [_toggle("daily_brief", "Daily brief", settings.get("daily_brief", True))],
         [_toggle("show_confidence", "Show confidence", settings.get("show_confidence", True))],
         [_toggle("show_raw_input", "Show raw input", settings.get("show_raw_input", True))],
-        [
-            _toggle(
-                "draft_suggestions",
-                "Draft suggestions",
-                settings.get("draft_suggestions", True),
-            )
-        ],
         [
             _toggle(
                 "ambiguity_prompts",

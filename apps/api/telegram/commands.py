@@ -21,7 +21,6 @@ from apps.api.telegram.keyboards import (
 )
 from core.domain.enums import WorkflowStatus
 from db.repositories.project_repo import ProjectRepository
-from db.repositories.review_session_repo import ReviewSessionRepository
 from db.repositories.task_record_repo import TaskRecordRepository
 from db.session import get_session_factory
 
@@ -83,7 +82,6 @@ async def cmd_help(message: Message):
         "/projects — list projects\n"
         "/pause — pause/resume review queue\n"
         "/review — trigger daily review\n"
-        "/draft — draft a follow-up message\n"
         "/settings — bot settings\n"
         "/stats — task statistics\n"
         "/help — this help text",
@@ -314,7 +312,6 @@ async def cmd_settings(message: Message):
         "<b>UX:</b>",
         f"  Show confidence: {'ON' if user_settings.get('show_confidence') else 'OFF'}",
         f"  Show raw input: {'ON' if user_settings.get('show_raw_input') else 'OFF'}",
-        f"  Draft suggestions: {'ON' if user_settings.get('draft_suggestions') else 'OFF'}",
         f"  Ambiguity prompts: {'ON' if user_settings.get('ambiguity_prompts') else 'OFF'}",
         "",
         "<b>LLM:</b>",
@@ -335,26 +332,6 @@ async def cmd_settings(message: Message):
     await message.answer(
         "\n".join(lines),
         reply_markup=settings_keyboard(user_settings),
-    )
-
-
-# ── /draft ────────────────────────────────────────────────────────────────────
-
-
-@command_router.message(Command("draft"))
-async def cmd_draft(message: Message):
-    factory = get_session_factory()
-    async with factory() as session:
-        session_repo = ReviewSessionRepository(session)
-        has_active = await session_repo.has_active_review()
-
-    if not has_active:
-        await message.answer("No active review item. Use /next to start reviewing.")
-        return
-
-    await message.answer(
-        "💬 Draft message generation is available during review.\n"
-        "Press <b>Draft Message</b> on the review card."
     )
 
 
@@ -385,11 +362,6 @@ async def menu_today(message: Message):
 @command_router.message(F.text == "📁 Projects")
 async def menu_projects(message: Message):
     await cmd_projects(message)
-
-
-@command_router.message(F.text == "✏️ Draft")
-async def menu_draft(message: Message):
-    await cmd_draft(message)
 
 
 @command_router.message(F.text == "⚙️ Settings")

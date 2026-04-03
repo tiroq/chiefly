@@ -8,7 +8,6 @@ from core.domain.enums import ReviewAction
 from core.schemas.telegram import (
     CallbackPayload,
     DisambiguationPayload,
-    DraftActionPayload,
     KindSelectPayload,
     ProjectSelectPayload,
     QueueActionPayload,
@@ -117,27 +116,6 @@ class TestDisambiguationPayload:
     def test_decode_invalid_format(self):
         with pytest.raises(ValueError, match="Invalid disambiguation callback data"):
             _ = DisambiguationPayload.decode("disambig:onlyonepart")
-
-
-class TestDraftActionPayload:
-    def test_encode(self):
-        p = DraftActionPayload(action="draft_use", task_id="abc123")
-        assert p.encode() == "draft_use:abc123"
-
-    def test_decode(self):
-        p = DraftActionPayload.decode("draft_use:abc123")
-        assert p.action == "draft_use"
-        assert p.task_id == "abc123"
-
-    def test_roundtrip(self):
-        original = DraftActionPayload(action="draft_formal", task_id="deadbeef")
-        decoded = DraftActionPayload.decode(original.encode())
-        assert decoded.action == original.action
-        assert decoded.task_id == original.task_id
-
-    def test_decode_invalid_no_colon(self):
-        with pytest.raises(ValueError, match="Invalid draft callback data"):
-            _ = DraftActionPayload.decode("draft_use")
 
 
 class TestQueueActionPayload:

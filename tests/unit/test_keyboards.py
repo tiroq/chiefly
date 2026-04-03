@@ -20,10 +20,11 @@ def _proposal_kb(short_id: str):
 
 
 class TestMainMenuKeyboard:
-    def test_has_8_buttons_in_4_rows(self):
+    def test_has_7_buttons_in_4_rows(self):
         kb = main_menu_keyboard()
         assert len(kb.keyboard) == 4
-        assert all(len(row) == 2 for row in kb.keyboard)
+        row_lengths = [len(row) for row in kb.keyboard]
+        assert row_lengths == [2, 2, 1, 2]
 
     def test_is_persistent_and_resized(self):
         kb = main_menu_keyboard()
@@ -39,10 +40,14 @@ class TestMainMenuKeyboard:
             "📬 Backlog",
             "📅 Today",
             "📁 Projects",
-            "✏️ Draft",
             "⚙️ Settings",
             "❓ Help",
         ]
+
+    def test_no_draft_button_in_main_menu(self):
+        kb = main_menu_keyboard()
+        labels = [button.text for row in kb.keyboard for button in row]
+        assert "✏️ Draft" not in labels
 
 
 class TestProposalKeyboard:
@@ -130,3 +135,8 @@ class TestSettingsKeyboard:
         back = kb.inline_keyboard[-1][0]
         assert back.text == "↩️ Back"
         assert back.callback_data == "settings:close"
+
+    def test_no_draft_suggestions_toggle(self):
+        kb = settings_keyboard({"draft_suggestions": True})
+        all_labels = [row[0].text for row in kb.inline_keyboard]
+        assert not any("Draft suggestions" in label for label in all_labels)
