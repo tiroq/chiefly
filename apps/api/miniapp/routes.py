@@ -55,7 +55,7 @@ async def get_review_queue(
     status: str | None = Query(default=None),
     session: AsyncSession = Depends(get_session),
 ) -> ReviewQueueResponse:
-    if status not in {None, "queued", "pending", "ambiguous"}:
+    if status not in {None, "queued", "active", "ambiguous"}:
         raise HTTPException(status_code=400, detail="Invalid status filter")
 
     service = MiniAppReviewService(session)
@@ -63,7 +63,7 @@ async def get_review_queue(
     return ReviewQueueResponse(
         items=[ReviewQueueItem(**item) for item in items],
         total=counts["total"],
-        pending=counts["pending"],
+        pending=counts["active"],
         queued=counts["queued"],
     )
 

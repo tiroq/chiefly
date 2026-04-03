@@ -63,7 +63,7 @@ class TestMiniAppRoutes:
                 [
                     _queue_item(stable_id),
                 ],
-                {"total": 1, "pending": 1, "queued": 0},
+                {"total": 1, "active": 1, "queued": 0},
             )
         )
 
